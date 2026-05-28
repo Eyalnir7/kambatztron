@@ -1,0 +1,45 @@
+{
+  "Gate Guard 1": {
+    "job_type": "guarding",
+    "difficulty_by_time_slot": {
+      "2026-06-01 08:00-2026-06-01 12:00": 4,
+      "2026-06-01 12:00-2026-06-01 16:00": 5,
+      "2026-06-01 20:00-2026-06-02 00:00": 8
+    }
+  },
+  "Gate Guard 2": {
+    "job_type": "guarding",
+    "difficulty_by_time_slot": {
+      "2026-06-01 08:00-2026-06-01 12:00": 4,
+      "2026-06-01 12:00-2026-06-01 16:00": 5,
+      "2026-06-01 20:00-2026-06-02 00:00": 8
+    }
+  },
+  "Kitchen Cleaning": {
+    "job_type": "cleaning",
+    "difficulty_by_time_slot": {
+      "2026-06-01 12:00-2026-06-01 14:00": 3,
+      "2026-06-02 12:00-2026-06-02 14:00": 3
+    }
+  },
+  "Courtyard Cleaning": {
+    "job_type": "cleaning",
+    "difficulty_by_time_slot": {
+      "2026-06-01 08:00-2026-06-01 10:00": 2,
+      "2026-06-02 08:00-2026-06-02 10:00": 2
+    }
+  },
+  "Standby Team A": {
+    "job_type": "standby-team",
+    "difficulty_by_time_slot": {
+      "2026-06-01 08:00-2026-06-01 20:00": 6,
+      "2026-06-02 08:00-2026-06-02 20:00": 6
+    }
+  },
+  "Ceremony Duty": {
+    "job_type": "ceremony-guarding",
+    "difficulty_by_time_slot": {
+      "2026-06-01 16:00-2026-06-01 18:00": 7
+    }
+  }
+}

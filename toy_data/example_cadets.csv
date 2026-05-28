@@ -1,0 +1,9 @@
+personal_number,name,unavailable_hours,forbidden_jobs,gender,team,platoon
+1001,David Cohen,2026-06-01 20:00-2026-06-02 08:00,Kitchen Cleaning,M,Alpha,1
+1002,Yossi Levi,,Gate Guard 1,M,Alpha,2
+1003,Amit Mizrahi,,cleaning,M,Bravo,1
+1004,Noa Bar,,Kitchen Cleaning,F,Bravo,2
+1005,Sarah Goldstein,2026-06-01 12:00-2026-06-01 16:00;2026-06-02 00:00-2026-06-02 08:00,,F,Bravo,1
+1006,Avi Schwartz,,Gate Guard 2,M,Alpha,1
+1007,Lisa Katz,2026-06-01 08:00-2026-06-01 12:00,,F,Alpha,2
+1008,Dan Roth,,standing-team,M,Bravo,2

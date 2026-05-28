@@ -1,0 +1,11 @@
+job_type_a,job_type_b,can_overlap,can_be_consecutive
+guarding,guarding,false,false
+guarding,cleaning,false,false
+guarding,standby-team,false,false
+guarding,ceremony-guarding,false,false
+cleaning,cleaning,false,false
+cleaning,standby-team,false,false
+cleaning,ceremony-guarding,false,false
+standby-team,standby-team,true,true
+standby-team,ceremony-guarding,true,false
+ceremony-guarding,ceremony-guarding,false,false
