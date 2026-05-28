@@ -8,6 +8,7 @@ from validation.validator import InputValidator
 from scheduling.context import build_context
 from scheduling.assigner import GreedyShiftAssigner
 from output.excel_exporter import ExcelExporter
+from output.evaluator import Evaluator
 
 
 class ShiftSchedulerApp:
@@ -27,3 +28,7 @@ class ShiftSchedulerApp:
 
         exporter = ExcelExporter()
         exporter.export(schedule, cadets, output_path)
+
+        # Run evaluation and write stats/plots next to output
+        evaluator = Evaluator()
+        evaluator.evaluate(schedule, cadets, output_path)
