@@ -1,11 +1,10 @@
-"""ShiftAssigner ABC and GreedyShiftAssigner implementation."""
+"""ShiftAssigner ABC and CpsatShiftAssigner implementation."""
 from abc import ABC, abstractmethod
-from typing import List, Dict
+from typing import List
+from ortools.sat.python import cp_model
 
-from domain.cadet import Cadet
 from domain.job import Shift
-from domain.constraints import ConstraintIndex
-from .workload import WorkloadTracker
+from .solver import SchedulingProblem
 from .schedule import Schedule
 
 
@@ -15,53 +14,43 @@ class ShiftAssigner(ABC):
         raise NotImplementedError()
 
 
-class GreedyShiftAssigner(ShiftAssigner):
-    """A simple greedy assigner that honors hard constraints."""
+class CpsatShiftAssigner(ShiftAssigner):
+    """An exact assigner using OR-Tools CP-SAT solver."""
 
-    def __init__(self):
-        self.workload = WorkloadTracker()
+    def __init__(self, t_rest_hours: float = 8.0, rho: float = 10.0):
+        self.t_rest_hours = t_rest_hours
+        self.rho = rho
 
     def assign(self, context) -> Schedule:
-        # context: ScheduleContext
-        assigned_shifts: List[Shift] = []
-        # track assigned shifts per cadet personal_number
-        cadet_assignments: Dict[str, List[Shift]] = {c.personal_number: [] for c in context.cadets}
+        # context: ScheduleContext (has .cadets, .shifts, .constraint_index)
+        problem = SchedulingProblem(
+            cadets=context.cadets,
+            shifts=context.shifts,
+            constraint_index=context.constraint_index,
+            t_rest_hours=self.t_rest_hours,
+            rho=self.rho
+        )
 
-        for shift in context.shifts:
-            candidates = []
-            for cadet in context.cadets:
-                if not cadet.is_available_during(shift.time_slot):
-                    continue
-                if not cadet.can_take_job(shift.job.name):
-                    continue
+        solver, status = problem.solve()
 
-                # check assigned shifts for overlaps and consecutive rules
-                ok = True
-                for a in cadet_assignments.get(cadet.personal_number, []):
-                    # Overlap check
-                    if a.time_slot.overlaps(shift.time_slot):
-                        if not context.constraint_index.can_overlap(a.job.job_type, shift.job.job_type):
-                            ok = False
-                            break
-                    # Consecutive check
-                    if a.time_slot.is_consecutive_with(shift.time_slot):
-                        if not context.constraint_index.can_be_consecutive(a.job.job_type, shift.job.job_type):
-                            ok = False
-                            break
-
-                if ok:
-                    candidates.append(cadet)
-
-            if not candidates:
-                raise ValueError(f"No eligible cadet found for shift: {shift}")
-
-            chosen = self.workload.least_loaded(candidates)
-            if chosen is None:
-                raise ValueError(f"No candidate chosen for shift: {shift}")
-
-            shift.assigned_cadet = chosen
-            self.workload.update(chosen, shift)
-            cadet_assignments[chosen.personal_number].append(shift)
-            assigned_shifts.append(shift)
-
-        return Schedule(assignments=assigned_shifts)
+        if status == cp_model.OPTIMAL or status == cp_model.FEASIBLE:
+            # Assign cadets based on solution
+            assigned_shifts: List[Shift] = []
+            for s_idx, shift in enumerate(context.shifts):
+                assigned_cadet = None
+                for c_idx, cadet in enumerate(context.cadets):
+                    if solver.Value(problem.X[(c_idx, s_idx)]) == 1:
+                        assigned_cadet = cadet
+                        break
+                
+                if assigned_cadet is None:
+                    raise ValueError(f"Solver error: no cadet assigned to {shift}")
+                    
+                shift.assigned_cadet = assigned_cadet
+                assigned_shifts.append(shift)
+                
+            return Schedule(assignments=assigned_shifts)
+        elif status == cp_model.INFEASIBLE:
+            raise ValueError("The scheduling problem is strictly INFEASIBLE.")
+        else:
+            raise ValueError(f"Solver finished with status: {solver.StatusName(status)}")

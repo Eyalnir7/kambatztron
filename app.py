@@ -6,7 +6,7 @@ from readers.job_reader import JobJSONReader
 from readers.constraints_reader import ConstraintsCSVReader
 from validation.validator import InputValidator
 from scheduling.context import build_context
-from scheduling.assigner import GreedyShiftAssigner
+from scheduling.assigner import CpsatShiftAssigner
 from output.excel_exporter import ExcelExporter
 from output.evaluator import Evaluator
 
@@ -23,7 +23,7 @@ class ShiftSchedulerApp:
 
         context = build_context(cadets=cadets, jobs=jobs, constraint_index=constraints)
 
-        assigner = GreedyShiftAssigner()
+        assigner = CpsatShiftAssigner(t_rest_hours=8.0, rho=10.0)
         schedule = assigner.assign(context)
 
         exporter = ExcelExporter()

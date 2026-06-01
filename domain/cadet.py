@@ -1,29 +1,19 @@
 """Cadet represents a person who can be assigned to shifts."""
 
-from dataclasses import dataclass, field
+from pydantic import BaseModel, ConfigDict, Field
 from typing import List
 
 from .time_slot import TimeSlot
 
 
-@dataclass(frozen=True)
-class Cadet:
-    """A cadet who can be assigned to shifts.
-
-    Attributes:
-        personal_number: Unique military ID (primary key)
-        name: Cadet name
-        unavailable_slots: Time slots when the cadet is not available
-        forbidden_jobs: Job names the cadet cannot do
-        gender: Cadet gender
-        team: Cadet team/unit
-        platoon: Cadet platoon
-    """
+class Cadet(BaseModel):
+    """A cadet who can be assigned to shifts."""
+    model_config = ConfigDict(frozen=True)
 
     personal_number: str
     name: str
-    unavailable_slots: List[TimeSlot] = field(default_factory=list)
-    forbidden_jobs: List[str] = field(default_factory=list)
+    unavailable_slots: List[TimeSlot] = Field(default_factory=list)
+    forbidden_jobs: List[str] = Field(default_factory=list)
     gender: str = ""
     team: str = ""
     platoon: str = ""
@@ -39,25 +29,7 @@ class Cadet:
         team: str,
         platoon: str,
     ) -> "Cadet":
-        """Create a Cadet from CSV row data.
-
-        Args:
-            personal_number: Unique military ID
-            name: Cadet name
-            unavailable_hours: Semicolon-delimited time slot strings,
-                             empty string means no unavailable hours
-            forbidden_jobs: Semicolon-delimited job names,
-                          empty string means no forbidden jobs
-            gender: Cadet gender
-            team: Cadet team
-            platoon: Cadet platoon
-
-        Returns:
-            Cadet instance
-
-        Raises:
-            ValueError: If time slot format is invalid
-        """
+        """Create a Cadet from CSV row data."""
         # Parse unavailable hours
         unavailable_slots = []
         if unavailable_hours and unavailable_hours.strip():
@@ -85,26 +57,9 @@ class Cadet:
         )
 
     def is_available_during(self, time_slot: TimeSlot) -> bool:
-        """Check if this cadet is available during a given time slot.
-
-        A cadet is available if the time slot does not overlap with any
-        of their unavailable slots.
-
-        Args:
-            time_slot: TimeSlot to check
-
-        Returns:
-            True if cadet is available, False if conflicted
-        """
+        """Check if this cadet is available during a given time slot."""
         return not any(slot.overlaps(time_slot) for slot in self.unavailable_slots)
 
     def can_take_job(self, job_name: str) -> bool:
-        """Check if this cadet can take a specific job.
-
-        Args:
-            job_name: Name of the job
-
-        Returns:
-            True if job is not forbidden, False otherwise
-        """
+        """Check if this cadet can take a specific job."""
         return job_name not in self.forbidden_jobs

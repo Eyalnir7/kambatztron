@@ -2,61 +2,56 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Dict, Optional
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+from typing import Dict, Optional, Any
 
 from .time_slot import TimeSlot
+
+# To avoid circular imports, Cadet will be imported conditionally or defined as Any
+# Actually, since Shift has assigned_cadet: Optional[Cadet], we can import it.
+# We'll use a string reference 'Cadet' for type hint to avoid circular import issues if needed,
+# but let's try direct import first.
 from .cadet import Cadet
 
 
-@dataclass(frozen=True)
-class Job:
-    """A duty/job that needs to be assigned to cadets.
-
-    Attributes:
-        name: Unique job name (e.g., "Gate Guard 1")
-        job_type: Type of job (e.g., "guarding", "cleaning")
-        difficulty_by_slot: Mapping of TimeSlot to difficulty score (1-10)
-    """
+class Job(BaseModel):
+    """A duty/job that needs to be assigned to cadets."""
+    model_config = ConfigDict(frozen=True)
 
     name: str
     job_type: str
-    difficulty_by_slot: Dict[TimeSlot, float] = field(default_factory=dict)
+    difficulty_by_slot: Dict[TimeSlot, float] = Field(default_factory=dict)
 
-    def __post_init__(self):
+    @model_validator(mode='after')
+    def check_difficulty_scores(self) -> 'Job':
         """Validate that all difficulty scores are in range [1, 10]."""
-        for difficulty in self.difficulty_by_slot.values():
+        for slot, difficulty in self.difficulty_by_slot.items():
             if not (1 <= difficulty <= 10):
                 raise ValueError(
                     f"Job '{self.name}': difficulty {difficulty} not in range [1, 10]"
                 )
+        return self
 
 
-@dataclass
-class Shift:
-    """An assignable work unit: a Job at a specific TimeSlot.
-
-    This is the unit that gets assigned to a cadet.
-
-    Attributes:
-        job: The job being assigned
-        time_slot: The time slot for this assignment
-        difficulty: Difficulty score for this specific shift
-        assigned_cadet: The cadet assigned to this shift (None if unassigned)
-    """
+class Shift(BaseModel):
+    """An assignable work unit: a Job at a specific TimeSlot."""
+    # We allow mutation for assigned_cadet
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
     job: Job
     time_slot: TimeSlot
     difficulty: float
     assigned_cadet: Optional[Cadet] = None
 
-    def __post_init__(self):
+    @model_validator(mode='after')
+    def check_difficulty(self) -> 'Shift':
         """Validate difficulty is in range [1, 10]."""
         if not (1 <= self.difficulty <= 10):
             raise ValueError(
                 f"Shift {self.job.name}/{self.time_slot}: "
                 f"difficulty {self.difficulty} not in range [1, 10]"
             )
+        return self
 
     @property
     def is_assigned(self) -> bool:
@@ -80,3 +75,6 @@ class Shift:
             f"Shift({self.job.name}, {self.time_slot}, "
             f"difficulty={self.difficulty}, cadet={cadet_name})"
         )
+
+# Rebuild model schema due to forward refs if needed
+Shift.model_rebuild()

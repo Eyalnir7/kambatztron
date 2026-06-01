@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kambatztron | Shift Optimization</title>
+    <!-- Modern Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar Navigation -->
+        <nav class="sidebar">
+            <div class="brand">
+                <div class="logo"></div>
+                <h1>Kambatztron</h1>
+            </div>
+            <ul class="nav-links">
+                <li class="active" data-view="dashboard">Dashboard</li>
+                <li data-view="cadets">Cadets & Teams</li>
+                <li data-view="jobs">Jobs & Shifts</li>
+                <li data-view="constraints">Constraints</li>
+            </ul>
+        </nav>
+
+        <!-- Main Content Area -->
+        <main class="main-content">
+            <header>
+                <h2 id="page-title">Dashboard</h2>
+                <button class="btn btn-primary" id="run-solver-btn">Run Solver</button>
+            </header>
+
+            <!-- Dashboard View -->
+            <section id="view-dashboard" class="view-section active">
+                <div class="glass-card">
+                    <h3>Optimization Status</h3>
+                    <p>Ready to compute the next shift schedule.</p>
+                </div>
+                <div class="glass-card schedule-card">
+                    <h3>Current Schedule</h3>
+                    <div id="schedule-output">No schedule generated yet.</div>
+                </div>
+            </section>
+
+            <!-- Cadets View -->
+            <section id="view-cadets" class="view-section">
+                <div class="glass-card">
+                    <h3>Add Cadet</h3>
+                    <form id="add-cadet-form" class="dynamic-form">
+                        <div class="form-group">
+                            <label>Name</label>
+                            <input type="text" id="cadet-name" required placeholder="E.g., John Doe">
+                        </div>
+                        <div class="form-group">
+                            <label>Personal Number</label>
+                            <input type="text" id="cadet-pn" required placeholder="E.g., 1234567">
+                        </div>
+                        <div class="form-group">
+                            <label>Team</label>
+                            <select id="cadet-team" required>
+                                <option value="">Loading teams...</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Forbidden Jobs</label>
+                            <select id="cadet-forbidden-jobs" multiple style="height: 100px;">
+                                <option value="">Loading jobs...</option>
+                            </select>
+                            <small style="color: var(--text-muted); font-size: 0.75rem;">Hold Cmd/Ctrl to select multiple.</small>
+                        </div>
+                        <button type="submit" class="btn btn-secondary">Add Cadet</button>
+                    </form>
+                </div>
+                <div class="glass-card">
+                    <h3>Cadets Roster</h3>
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>PN</th>
+                                <th>Name</th>
+                                <th>Team</th>
+                                <th>Forbidden Jobs</th>
+                            </tr>
+                        </thead>
+                        <tbody id="cadets-list">
+                            <!-- Populated by JS -->
+                        </tbody>
+                    </table>
+                </div>
+                <div class="glass-card">
+                    <h3>Bulk Upload Cadets (CSV)</h3>
+                    <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 12px;">
+                        Format: <code>personal_number,name,unavailable_hours,forbidden_jobs,gender,team,platoon</code><br>
+                        (Use semicolons <code>;</code> to separate multiple forbidden jobs or unavailable hours)
+                    </p>
+                    <div class="form-group">
+                        <input type="file" id="cadets-csv-file" accept=".csv">
+                    </div>
+                    <button class="btn btn-secondary" style="margin-top: 12px;" id="upload-cadets-btn">Upload Cadets</button>
+                </div>
+            </section>
+
+            <!-- Jobs View -->
+            <section id="view-jobs" class="view-section">
+                <div class="glass-card">
+                    <h3>Add New Job</h3>
+                    <form id="add-job-form" class="dynamic-form">
+                        <div class="form-group">
+                            <label>Job Name</label>
+                            <input type="text" id="new-job-name" required placeholder="E.g., Guard Duty">
+                        </div>
+                        <div class="form-group">
+                            <label>Job Type</label>
+                            <input type="text" id="new-job-type" required placeholder="E.g., guarding">
+                        </div>
+                        <button type="submit" class="btn btn-secondary">Add Job</button>
+                    </form>
+                </div>
+                <div class="glass-card">
+                    <h3>Define a Job Shift</h3>
+                    <form id="add-shift-form" class="dynamic-form">
+                        <div class="form-group">
+                            <label>Select Job</label>
+                            <select id="shift-job-select" required>
+                                <option value="">Loading jobs...</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Date</label>
+                            <input type="date" id="shift-date" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Start Time: <span id="shift-start-time-display">08:00</span></label>
+                            <input type="range" id="shift-start-time" min="0" max="96" value="32" required>
+                        </div>
+                        <div class="form-group">
+                            <label>End Time: <span id="shift-end-time-display">16:00</span></label>
+                            <input type="range" id="shift-end-time" min="0" max="96" value="64" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Difficulty Score (1-10)</label>
+                            <input type="number" id="shift-difficulty" min="1" max="10" value="5" required>
+                        </div>
+                        <button type="submit" class="btn btn-secondary">Add Shift</button>
+                    </form>
+                </div>
+                <div class="glass-card">
+                    <h3>Active Shifts</h3>
+                    <ul id="shifts-list" class="constraint-list">
+                        <!-- Populated by JS -->
+                    </ul>
+                </div>
+                <div class="glass-card">
+                    <h3>Bulk Upload Jobs (CSV)</h3>
+                    <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 12px;">
+                        Format: <code>job_name,job_type</code>
+                    </p>
+                    <div class="form-group">
+                        <input type="file" id="jobs-csv-file" accept=".csv">
+                    </div>
+                    <button class="btn btn-secondary" style="margin-top: 12px;" id="upload-jobs-btn">Upload Jobs</button>
+                </div>
+            </section>
+
+            <!-- Constraints View -->
+            <section id="view-constraints" class="view-section">
+                <div class="glass-card">
+                    <h3>Add Team Constraint</h3>
+                    <form id="team-constraint-form" class="dynamic-form">
+                        <div class="form-group">
+                            <label>Select Team</label>
+                            <select id="tc-team-select">
+                                <option value="">Loading teams...</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Date</label>
+                            <input type="date" id="tc-date" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Start Time: <span id="tc-start-time-display">00:00</span></label>
+                            <input type="range" id="tc-start-time" min="0" max="96" value="0" required>
+                        </div>
+                        <div class="form-group">
+                            <label>End Time: <span id="tc-end-time-display">24:00</span></label>
+                            <input type="range" id="tc-end-time" min="0" max="96" value="96" required>
+                        </div>
+                        <button type="submit" class="btn btn-secondary">Add Constraint</button>
+                    </form>
+                </div>
+                
+                <div class="glass-card">
+                    <h3>Add Personal Constraint</h3>
+                    <form id="cadet-constraint-form" class="dynamic-form">
+                        <div class="form-group">
+                            <label>Select Cadet</label>
+                            <select id="cc-cadet-select" required>
+                                <option value="">Loading cadets...</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Date</label>
+                            <input type="date" id="cc-date" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Start Time: <span id="cc-start-time-display">00:00</span></label>
+                            <input type="range" id="cc-start-time" min="0" max="96" value="0" required>
+                        </div>
+                        <div class="form-group">
+                            <label>End Time: <span id="cc-end-time-display">24:00</span></label>
+                            <input type="range" id="cc-end-time" min="0" max="96" value="96" required>
+                        </div>
+                        <button type="submit" class="btn btn-secondary">Add Constraint</button>
+                    </form>
+                </div>
+
+                <div class="glass-card">
+                    <h3>Active Team Constraints</h3>
+                    <ul id="team-constraints-list" class="constraint-list">
+                        <!-- Populated by JS -->
+                    </ul>
+                </div>
+
+                <div class="glass-card">
+                    <h3>Active Personal Constraints</h3>
+                    <ul id="personal-constraints-list" class="constraint-list">
+                        <!-- Populated by JS -->
+                    </ul>
+                </div>
+            </section>
+        </main>
+    </div>
+    <script src="app.js"></script>
+</body>
+</html>
