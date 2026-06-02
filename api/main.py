@@ -26,6 +26,7 @@ STATE = {
     "cadets": [],
     "teams": ["Team 9", "Team 10", "Team 11", "Team 12"], # Predefined teams for choices
     "team_constraints": [],
+    "job_constraints": [],
     "jobs": [
         {"name": "Gate Guard 1", "type": "guarding"},
         {"name": "Kitchen Duty", "type": "cleaning"},
@@ -90,6 +91,15 @@ def add_shift(shift: dict):
 def get_team_constraints():
     return STATE["team_constraints"]
 
+@app.get("/api/job_constraints")
+def get_job_constraints():
+    return STATE["job_constraints"]
+
+@app.post("/api/job_constraints")
+def add_job_constraint(constraint: dict):
+    STATE["job_constraints"].append(constraint)
+    return constraint
+
 @app.post("/api/solve")
 def solve_schedule():
     # 1. Build Jobs
@@ -134,9 +144,20 @@ def solve_schedule():
                 pass
         tc_objects.append(TeamConstraint(team=tc["team"], unavailable_slots=unavail))
     
-    constraint_index = ConstraintIndex(constraints=[], team_constraints=tc_objects)
+    # 4. Build Job Constraints
+    from domain.constraints import JobConstraint
+    jc_objects = []
+    for jc in STATE["job_constraints"]:
+        jc_objects.append(JobConstraint(
+            job_type_a=jc["job_type_a"],
+            job_type_b=jc["job_type_b"],
+            can_overlap=jc["can_overlap"],
+            can_be_consecutive=jc["can_be_consecutive"]
+        ))
 
-    # 4. Solve
+    constraint_index = ConstraintIndex(constraints=jc_objects, team_constraints=tc_objects)
+
+    # 5. Solve
     context = build_context(cadets=cadet_objects, jobs=job_objects, constraint_index=constraint_index)
     assigner = CpsatShiftAssigner(t_rest_hours=8.0, rho=10.0)
     

@@ -5,6 +5,7 @@ const API_BASE = '/api';
 let cadets = [];
 let teams = [];
 let teamConstraints = [];
+let jobConstraints = [];
 let jobs = [];
 let shifts = [];
 
@@ -27,23 +28,25 @@ navLinks.forEach(link => {
 // Fetch Data from Backend
 async function fetchData() {
     try {
-        const [cadetsRes, teamsRes, constraintsRes, jobsRes, shiftsRes] = await Promise.all([
+        const [cadetsRes, teamsRes, teamConstraintsRes, jobConstraintsRes, jobsRes, shiftsRes] = await Promise.all([
             fetch(`${API_BASE}/cadets`),
             fetch(`${API_BASE}/teams`),
             fetch(`${API_BASE}/team_constraints`),
+            fetch(`${API_BASE}/job_constraints`),
             fetch(`${API_BASE}/jobs`),
             fetch(`${API_BASE}/shifts`)
         ]);
 
         cadets = await cadetsRes.json();
         teams = await teamsRes.json();
-        teamConstraints = await constraintsRes.json();
+        teamConstraints = await teamConstraintsRes.json();
+        jobConstraints = await jobConstraintsRes.json();
         jobs = await jobsRes.json();
         shifts = await shiftsRes.json();
 
         renderCadets();
         renderDropdowns();
-        renderTeamConstraints();
+        renderConstraints();
         renderShifts();
     } catch (e) {
         console.error('Error fetching data:', e);
@@ -66,7 +69,8 @@ function renderDropdowns() {
     const teamOptions = '<option value="">Select a Team...</option>' + 
         teams.map(t => `<option value="${t}">${t}</option>`).join('');
     
-    document.getElementById('tc-team-select').innerHTML = teamOptions;
+    const tcTeamSelect = document.getElementById('tc-team-select');
+    if (tcTeamSelect) tcTeamSelect.innerHTML = teamOptions;
     
     const cadetTeamSelect = document.getElementById('cadet-team');
     if (cadetTeamSelect) cadetTeamSelect.innerHTML = teamOptions;
@@ -85,14 +89,19 @@ function renderDropdowns() {
     if (ccCadetSelect) ccCadetSelect.innerHTML = cadetSelectOptions;
 }
 
-function renderTeamConstraints() {
-    document.getElementById('team-constraints-list').innerHTML = teamConstraints.map(tc => `
-        <li>
-            <div><strong>Team: ${tc.team}</strong></div>
-            <div style="color: var(--text-muted); font-size: 0.85rem;">Unavailable: ${tc.unavailable_slots.map(s => `${s.start}-${s.end}`).join(', ')}</div>
-        </li>
-    `).join('');
+function renderConstraints() {
+    // Team Constraints
+    const tcList = document.getElementById('team-constraints-list');
+    if (tcList) {
+        tcList.innerHTML = teamConstraints.map(tc => `
+            <li>
+                <div><strong>Team: ${tc.team}</strong></div>
+                <div style="color: var(--text-muted); font-size: 0.85rem;">Unavailable: ${tc.unavailable_slots.map(s => `${s.start}-${s.end}`).join(', ')}</div>
+            </li>
+        `).join('');
+    }
 
+    // Personal Constraints
     const personalConstraints = [];
     cadets.forEach(c => {
         if (c.unavailable_slots && c.unavailable_slots.length > 0) {
@@ -102,12 +111,28 @@ function renderTeamConstraints() {
         }
     });
 
-    document.getElementById('personal-constraints-list').innerHTML = personalConstraints.map(pc => `
-        <li>
-            <div><strong>Cadet: ${pc.name} (${pc.pn})</strong></div>
-            <div style="color: var(--text-muted); font-size: 0.85rem;">Unavailable: ${pc.start}-${pc.end}</div>
-        </li>
-    `).join('');
+    const pcList = document.getElementById('personal-constraints-list');
+    if (pcList) {
+        pcList.innerHTML = personalConstraints.map(pc => `
+            <li>
+                <div><strong>Cadet: ${pc.name} (${pc.pn})</strong></div>
+                <div style="color: var(--text-muted); font-size: 0.85rem;">Unavailable: ${pc.start}-${pc.end}</div>
+            </li>
+        `).join('');
+    }
+
+    // Job Matrix
+    const jmList = document.getElementById('job-matrix-list');
+    if (jmList) {
+        jmList.innerHTML = jobConstraints.map(jc => `
+            <tr>
+                <td>${jc.job_type_a}</td>
+                <td>${jc.job_type_b}</td>
+                <td><span style="color: ${jc.can_overlap ? '#10b981' : '#ef4444'}">${jc.can_overlap ? 'Yes' : 'No'}</span></td>
+                <td><span style="color: ${jc.can_be_consecutive ? '#10b981' : '#ef4444'}">${jc.can_be_consecutive ? 'Yes' : 'No'}</span></td>
+            </tr>
+        `).join('');
+    }
 }
 
 function renderShifts() {
@@ -121,6 +146,20 @@ function renderShifts() {
         `).join('');
     }
 }
+
+// Midnight Crossover Logic Helper
+const computeTimeSlot = (dateStr, startH, endH) => {
+    let startDate = new Date(`${dateStr}T${startH}`);
+    let endDate = new Date(`${dateStr}T${endH}`);
+    
+    // If end time is less than or equal to start time, it crossed midnight to the next day
+    if (endDate <= startDate) {
+        endDate.setDate(endDate.getDate() + 1);
+    }
+    
+    const endStrDate = endDate.toISOString().split('T')[0];
+    return `${dateStr} ${startH}-${endStrDate} ${endH}`;
+};
 
 // Form Submissions
 document.getElementById('add-cadet-form').addEventListener('submit', async (e) => {
@@ -163,49 +202,14 @@ document.getElementById('add-job-form').addEventListener('submit', async (e) => 
     fetchData();
 });
 
-// Helper to format slider value (0-96) to HH:MM
-const formatTime = (val) => {
-    let hours = Math.floor(val / 4);
-    const mins = (val % 4) * 15;
-    if (hours === 24) hours = 23; // max bound display
-    return `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`;
-};
-
-// Slider display logic
-const setupSlider = (sliderId, displayId) => {
-    const slider = document.getElementById(sliderId);
-    const display = document.getElementById(displayId);
-    if (!slider || !display) return;
-    slider.addEventListener('input', (e) => {
-        const val = parseInt(e.target.value, 10);
-        let timeStr = formatTime(val);
-        if (val === 96) timeStr = "24:00"; // display only
-        display.textContent = timeStr;
-    });
-};
-
-setupSlider('shift-start-time', 'shift-start-time-display');
-setupSlider('shift-end-time', 'shift-end-time-display');
-setupSlider('tc-start-time', 'tc-start-time-display');
-setupSlider('tc-end-time', 'tc-end-time-display');
-setupSlider('cc-start-time', 'cc-start-time-display');
-setupSlider('cc-end-time', 'cc-end-time-display');
-
 document.getElementById('add-shift-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     
     const date = document.getElementById('shift-date').value;
-    const startVal = parseInt(document.getElementById('shift-start-time').value, 10);
-    const endVal = parseInt(document.getElementById('shift-end-time').value, 10);
+    const startH = document.getElementById('shift-start-time').value; // "HH:MM"
+    const endH = document.getElementById('shift-end-time').value; // "HH:MM"
     
-    let startStr = formatTime(startVal);
-    let endStr = formatTime(endVal);
-    
-    if (endVal === 96) {
-        endStr = "23:59";
-    }
-    
-    const timeSlotStr = `${date} ${startStr}-${date} ${endStr}`;
+    const timeSlotStr = computeTimeSlot(date, startH, endH);
 
     const payload = {
         job_name: document.getElementById('shift-job-select').value,
@@ -227,19 +231,15 @@ document.getElementById('team-constraint-form').addEventListener('submit', async
     e.preventDefault();
     
     const date = document.getElementById('tc-date').value;
-    const startVal = parseInt(document.getElementById('tc-start-time').value, 10);
-    const endVal = parseInt(document.getElementById('tc-end-time').value, 10);
+    const startH = document.getElementById('tc-start-time').value;
+    const endH = document.getElementById('tc-end-time').value;
     
-    let startStr = formatTime(startVal);
-    let endStr = formatTime(endVal);
-    
-    if (endVal === 96) {
-        endStr = "23:59";
-    }
-    
+    const timeSlotStr = computeTimeSlot(date, startH, endH);
+    const [computedStart, computedEnd] = timeSlotStr.split('-');
+
     const payload = {
         team: document.getElementById('tc-team-select').value,
-        unavailable_slots: [{ start: `${date} ${startStr}`, end: `${date} ${endStr}` }]
+        unavailable_slots: [{ start: computedStart, end: computedEnd }]
     };
 
     await fetch(`${API_BASE}/team_constraints`, {
@@ -256,22 +256,38 @@ document.getElementById('cadet-constraint-form').addEventListener('submit', asyn
     e.preventDefault();
     
     const date = document.getElementById('cc-date').value;
-    const startVal = parseInt(document.getElementById('cc-start-time').value, 10);
-    const endVal = parseInt(document.getElementById('cc-end-time').value, 10);
+    const startH = document.getElementById('cc-start-time').value;
+    const endH = document.getElementById('cc-end-time').value;
     
-    let startStr = formatTime(startVal);
-    let endStr = formatTime(endVal);
-    
-    if (endVal === 96) {
-        endStr = "23:59";
-    }
+    const timeSlotStr = computeTimeSlot(date, startH, endH);
+    const [computedStart, computedEnd] = timeSlotStr.split('-');
     
     const payload = {
         personal_number: document.getElementById('cc-cadet-select').value,
-        unavailable_slots: [{ start: `${date} ${startStr}`, end: `${date} ${endStr}` }]
+        unavailable_slots: [{ start: computedStart, end: computedEnd }]
     };
 
     await fetch(`${API_BASE}/cadet_constraints`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    });
+    
+    e.target.reset();
+    fetchData();
+});
+
+document.getElementById('job-matrix-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    
+    const payload = {
+        job_type_a: document.getElementById('jm-type-a').value.toLowerCase(),
+        job_type_b: document.getElementById('jm-type-b').value.toLowerCase(),
+        can_overlap: document.getElementById('jm-overlap').checked,
+        can_be_consecutive: document.getElementById('jm-consecutive').checked
+    };
+
+    await fetch(`${API_BASE}/job_constraints`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
@@ -357,7 +373,7 @@ document.getElementById('upload-cadets-btn').addEventListener('click', () => {
                 name: row.name || '',
                 team: row.team || '',
                 forbidden_jobs: row.forbidden_jobs ? row.forbidden_jobs.split(';').map(s=>s.trim()).filter(s=>s) : [],
-                unavailable_slots: [] // not fully parsed here for simplicity, but could be added
+                unavailable_slots: []
             };
             await fetch(`${API_BASE}/cadets`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload) });
             count++;

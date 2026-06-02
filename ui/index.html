@@ -133,12 +133,12 @@
                             <input type="date" id="shift-date" required>
                         </div>
                         <div class="form-group">
-                            <label>Start Time: <span id="shift-start-time-display">08:00</span></label>
-                            <input type="range" id="shift-start-time" min="0" max="96" value="32" required>
+                            <label>Start Time</label>
+                            <input type="time" id="shift-start-time" required>
                         </div>
                         <div class="form-group">
-                            <label>End Time: <span id="shift-end-time-display">16:00</span></label>
-                            <input type="range" id="shift-end-time" min="0" max="96" value="64" required>
+                            <label>End Time</label>
+                            <input type="time" id="shift-end-time" required>
                         </div>
                         <div class="form-group">
                             <label>Difficulty Score (1-10)</label>
@@ -181,12 +181,12 @@
                             <input type="date" id="tc-date" required>
                         </div>
                         <div class="form-group">
-                            <label>Start Time: <span id="tc-start-time-display">00:00</span></label>
-                            <input type="range" id="tc-start-time" min="0" max="96" value="0" required>
+                            <label>Start Time</label>
+                            <input type="time" id="tc-start-time" required>
                         </div>
                         <div class="form-group">
-                            <label>End Time: <span id="tc-end-time-display">24:00</span></label>
-                            <input type="range" id="tc-end-time" min="0" max="96" value="96" required>
+                            <label>End Time</label>
+                            <input type="time" id="tc-end-time" required>
                         </div>
                         <button type="submit" class="btn btn-secondary">Add Constraint</button>
                     </form>
@@ -206,15 +206,57 @@
                             <input type="date" id="cc-date" required>
                         </div>
                         <div class="form-group">
-                            <label>Start Time: <span id="cc-start-time-display">00:00</span></label>
-                            <input type="range" id="cc-start-time" min="0" max="96" value="0" required>
+                            <label>Start Time</label>
+                            <input type="time" id="cc-start-time" required>
                         </div>
                         <div class="form-group">
-                            <label>End Time: <span id="cc-end-time-display">24:00</span></label>
-                            <input type="range" id="cc-end-time" min="0" max="96" value="96" required>
+                            <label>End Time</label>
+                            <input type="time" id="cc-end-time" required>
                         </div>
                         <button type="submit" class="btn btn-secondary">Add Constraint</button>
                     </form>
+                </div>
+
+                <div class="glass-card">
+                    <h3>Add Job Compatibility (Matrix)</h3>
+                    <form id="job-matrix-form" class="dynamic-form">
+                        <div class="form-group">
+                            <label>Job Type A</label>
+                            <input type="text" id="jm-type-a" placeholder="E.g., guarding" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Job Type B</label>
+                            <input type="text" id="jm-type-b" placeholder="E.g., cleaning" required>
+                        </div>
+                        <div style="display: flex; gap: 16px; margin-top: 8px;">
+                            <label style="display: flex; align-items: center; gap: 8px; font-size: 0.9rem; cursor: pointer;">
+                                <input type="checkbox" id="jm-overlap" style="width: 16px; height: 16px;">
+                                Can Overlap?
+                            </label>
+                            <label style="display: flex; align-items: center; gap: 8px; font-size: 0.9rem; cursor: pointer;">
+                                <input type="checkbox" id="jm-consecutive" style="width: 16px; height: 16px;">
+                                Can be Consecutive?
+                            </label>
+                        </div>
+                        <button type="submit" class="btn btn-secondary">Add Matrix Rule</button>
+                    </form>
+                </div>
+
+                <div class="glass-card">
+                    <h3>Active Job Constraints (Matrix)</h3>
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Type A</th>
+                                <th>Type B</th>
+                                <th>Can Overlap</th>
+                                <th>Can be Consecutive</th>
+                            </tr>
+                        </thead>
+                        <tbody id="job-matrix-list">
+                            <!-- Populated by JS -->
+                        </tbody>
+                    </table>
                 </div>
 
                 <div class="glass-card">
