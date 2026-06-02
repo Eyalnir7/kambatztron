@@ -50,7 +50,7 @@ class SchedulingProblem:
                         # Only consider pairs where s1 ends before s2 starts
                         if s1.time_slot.end <= s2.time_slot.start:
                             gap_hours = (s2.time_slot.start - s1.time_slot.end).total_seconds() / 3600.0
-                            if 0 < gap_hours < self.t_rest_hours:
+                            if 0 <= gap_hours < self.t_rest_hours:
                                 self.Y[(c_idx, s1_idx, s2_idx)] = self.model.NewBoolVar(f'Y_c{c_idx}_s{s1_idx}_s{s2_idx}')
 
         # Minimax objective variable (max workload among all cadets)

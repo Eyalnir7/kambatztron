@@ -47,6 +47,10 @@ class ConstraintIndex:
         return constraint.can_overlap
 
     def can_be_consecutive(self, job_type_a: str, job_type_b: str) -> bool:
+        # Wildcard rule: 'jobs at the base' and 'dynamic guarding' can be consecutive with any other job
+        if job_type_a in ("jobs at the base", "dynamic guarding") or job_type_b in ("jobs at the base", "dynamic guarding"):
+            return True
+
         key = (job_type_a, job_type_b)
         constraint = self._constraints.get(key)
         if constraint is None:

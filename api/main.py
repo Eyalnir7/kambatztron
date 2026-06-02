@@ -26,8 +26,30 @@ STATE = {
     "cadets": [],
     "teams": ["Team 9", "Team 10", "Team 11", "Team 12"], # Predefined teams for choices
     "team_constraints": [],
-    "job_constraints": [],
+    "job_constraints": [
+        {
+            "job_type_a": "dynamic guarding",
+            "job_type_b": "jobs at the base",
+            "can_overlap": True,
+            "can_be_consecutive": True
+        },
+        {
+            "job_type_a": "dynamic guarding",
+            "job_type_b": "dynamic guarding",
+            "can_overlap": False,
+            "can_be_consecutive": True
+        },
+        {
+            "job_type_a": "jobs at the base",
+            "job_type_b": "jobs at the base",
+            "can_overlap": False,
+            "can_be_consecutive": True
+        }
+    ],
     "jobs": [
+        {"name": "cafcaf_a", "type": "dynamic guarding"},
+        {"name": "cafcaf_b", "type": "dynamic guarding"},
+        {"name": "abas", "type": "jobs at the base"},
         {"name": "Gate Guard 1", "type": "guarding"},
         {"name": "Kitchen Duty", "type": "cleaning"},
         {"name": "Patrol Alpha", "type": "patrol"}
@@ -44,6 +66,57 @@ def add_cadet(cadet: dict):
     STATE["cadets"].append(cadet)
     return cadet
 
+@app.post("/api/cadet_constraints")
+def add_cadet_constraint(constraint: dict):
+    pn = constraint.get("personal_number")
+    slots = constraint.get("unavailable_slots", [])
+    for c in STATE["cadets"]:
+        if c.get("personal_number") == pn:
+            c.setdefault("unavailable_slots", []).extend(slots)
+            return {"status": "success", "cadet": c}
+    return {"status": "error", "message": "Cadet not found"}
+
+@app.delete("/api/cadets/{pn}/constraints/{start}/{end}")
+def delete_cadet_constraint(pn: str, start: str, end: str):
+    for c in STATE["cadets"]:
+        if c.get("personal_number") == pn:
+            if "unavailable_slots" in c:
+                c["unavailable_slots"] = [
+                    s for s in c["unavailable_slots"] 
+                    if not (s.get("start") == start and s.get("end") == end)
+                ]
+            return {"status": "success"}
+    return {"status": "error", "message": "Cadet not found"}
+
+@app.post("/api/cadet_forbidden_jobs")
+def update_cadet_forbidden_jobs(payload: dict):
+    pn = payload.get("personal_number")
+    jobs_to_add = payload.get("forbidden_jobs", [])
+    for c in STATE["cadets"]:
+        if c.get("personal_number") == pn:
+            if "forbidden_jobs" not in c:
+                c["forbidden_jobs"] = []
+            # Merge without duplicates
+            for j in jobs_to_add:
+                if j not in c["forbidden_jobs"]:
+                    c["forbidden_jobs"].append(j)
+            return {"status": "success", "cadet": c}
+    return {"status": "error", "message": "Cadet not found"}
+
+@app.delete("/api/cadets/{pn}")
+def delete_cadet(pn: str):
+    STATE["cadets"] = [c for c in STATE["cadets"] if c.get("personal_number") != pn]
+    return {"status": "success"}
+
+@app.delete("/api/cadets/{pn}/forbidden_jobs/{job_name}")
+def delete_cadet_forbidden_job(pn: str, job_name: str):
+    for c in STATE["cadets"]:
+        if c.get("personal_number") == pn:
+            if "forbidden_jobs" in c and job_name in c["forbidden_jobs"]:
+                c["forbidden_jobs"].remove(job_name)
+            return {"status": "success"}
+    return {"status": "error", "message": "Cadet not found"}
+
 @app.get("/api/teams")
 def get_teams():
     # Extract unique teams from cadets + predefined teams
@@ -57,6 +130,13 @@ def get_teams():
 def add_team_constraint(constraint: dict):
     STATE["team_constraints"].append(constraint)
     return constraint
+
+@app.delete("/api/team_constraints/{index}")
+def delete_team_constraint(index: int):
+    if 0 <= index < len(STATE["team_constraints"]):
+        STATE["team_constraints"].pop(index)
+        return {"status": "success"}
+    return {"status": "error", "message": "Index out of range"}
 
 @app.post("/api/cadet_constraints")
 def add_cadet_constraint(constraint: dict):
@@ -78,6 +158,13 @@ def add_job(job: dict):
     STATE["jobs"].append(job)
     return job
 
+@app.delete("/api/jobs/{name}")
+def delete_job(name: str):
+    STATE["jobs"] = [j for j in STATE["jobs"] if j.get("name") != name]
+    # Cascade delete shifts
+    STATE["shifts"] = [s for s in STATE["shifts"] if s.get("job_name") != name]
+    return {"status": "success"}
+
 @app.get("/api/shifts")
 def get_shifts():
     return STATE["shifts"]
@@ -86,6 +173,13 @@ def get_shifts():
 def add_shift(shift: dict):
     STATE["shifts"].append(shift)
     return shift
+
+@app.delete("/api/shifts/{index}")
+def delete_shift(index: int):
+    if 0 <= index < len(STATE["shifts"]):
+        STATE["shifts"].pop(index)
+        return {"status": "success"}
+    return {"status": "error", "message": "Index out of range"}
 
 @app.get("/api/team_constraints")
 def get_team_constraints():
@@ -99,6 +193,15 @@ def get_job_constraints():
 def add_job_constraint(constraint: dict):
     STATE["job_constraints"].append(constraint)
     return constraint
+
+@app.delete("/api/job_constraints/{type_a}/{type_b}")
+def delete_job_constraint(type_a: str, type_b: str):
+    STATE["job_constraints"] = [
+        jc for jc in STATE["job_constraints"]
+        if not (jc.get("job_type_a") == type_a and jc.get("job_type_b") == type_b) and
+           not (jc.get("job_type_a") == type_b and jc.get("job_type_b") == type_a)
+    ]
+    return {"status": "success"}
 
 @app.post("/api/solve")
 def solve_schedule():

@@ -45,6 +45,7 @@ async function fetchData() {
         shifts = await shiftsRes.json();
 
         renderCadets();
+        renderJobs();
         renderDropdowns();
         renderConstraints();
         renderShifts();
@@ -60,9 +61,22 @@ function renderCadets() {
             <td>${c.personal_number || ''}</td>
             <td>${c.name || ''}</td>
             <td><span style="background: rgba(59, 130, 246, 0.2); color: #60a5fa; padding: 4px 8px; border-radius: 4px; font-size: 0.8rem;">${c.team || 'None'}</span></td>
-            <td style="font-size: 0.85rem; color: var(--text-muted);">${(c.forbidden_jobs || []).join(', ')}</td>
+            <td><button class="btn" style="background: rgba(239, 68, 68, 0.2); color: #ef4444; padding: 2px 8px; border: 1px solid #ef4444; font-size: 0.75rem;" onclick="deleteCadet('${c.personal_number}')">x</button></td>
         </tr>
     `).join('');
+}
+
+function renderJobs() {
+    const jobsList = document.getElementById('jobs-list');
+    if (jobsList) {
+        jobsList.innerHTML = jobs.map(j => `
+            <tr>
+                <td>${j.name}</td>
+                <td><span style="background: rgba(16, 185, 129, 0.2); color: #34d399; padding: 2px 6px; border-radius: 4px; font-size: 0.8rem;">${j.type}</span></td>
+                <td><button class="btn" style="background: rgba(239, 68, 68, 0.2); color: #ef4444; padding: 2px 8px; border: 1px solid #ef4444; font-size: 0.75rem;" onclick="deleteJob('${j.name}')">x</button></td>
+            </tr>
+        `).join('');
+    }
 }
 
 function renderDropdowns() {
@@ -77,26 +91,46 @@ function renderDropdowns() {
 
     const jobOptions = jobs.map(j => `<option value="${j.name}">${j.name} (${j.type})</option>`).join('');
     
-    const forbiddenJobsSelect = document.getElementById('cadet-forbidden-jobs');
+    const forbiddenJobsSelect = document.getElementById('fj-job-select');
     if (forbiddenJobsSelect) forbiddenJobsSelect.innerHTML = jobOptions;
     
     const shiftJobSelect = document.getElementById('shift-job-select');
     if (shiftJobSelect) shiftJobSelect.innerHTML = '<option value="">Select a Job...</option>' + jobOptions;
 
+    const bulkJobSelect = document.getElementById('bulk-job-select');
+    if (bulkJobSelect) bulkJobSelect.innerHTML = '<option value="">Select a Job...</option>' + jobOptions;
+
     const cadetSelectOptions = '<option value="">Select a Cadet...</option>' + 
         cadets.map(c => `<option value="${c.personal_number}">${c.name} (${c.personal_number})</option>`).join('');
+    
     const ccCadetSelect = document.getElementById('cc-cadet-select');
     if (ccCadetSelect) ccCadetSelect.innerHTML = cadetSelectOptions;
+
+    const fjCadetSelect = document.getElementById('fj-cadet-select');
+    if (fjCadetSelect) fjCadetSelect.innerHTML = cadetSelectOptions;
+
+    const uniqueTypes = [...new Set(jobs.map(j => j.type))].filter(t => t);
+    const typeOptions = '<option value="">Select a Job Type...</option>' + 
+        uniqueTypes.map(t => `<option value="${t}">${t}</option>`).join('');
+    
+    const jmTypeA = document.getElementById('jm-type-a');
+    if (jmTypeA) jmTypeA.innerHTML = typeOptions;
+    
+    const jmTypeB = document.getElementById('jm-type-b');
+    if (jmTypeB) jmTypeB.innerHTML = typeOptions;
 }
 
 function renderConstraints() {
     // Team Constraints
     const tcList = document.getElementById('team-constraints-list');
     if (tcList) {
-        tcList.innerHTML = teamConstraints.map(tc => `
-            <li>
-                <div><strong>Team: ${tc.team}</strong></div>
-                <div style="color: var(--text-muted); font-size: 0.85rem;">Unavailable: ${tc.unavailable_slots.map(s => `${s.start}-${s.end}`).join(', ')}</div>
+        tcList.innerHTML = teamConstraints.map((tc, idx) => `
+            <li style="display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                    <div><strong>Team: ${tc.team}</strong></div>
+                    <div style="color: var(--text-muted); font-size: 0.85rem;">Unavailable: ${tc.unavailable_slots.map(s => `${s.start}-${s.end}`).join(', ')}</div>
+                </div>
+                <button class="btn" style="background: rgba(239, 68, 68, 0.2); color: #ef4444; padding: 2px 8px; border: 1px solid #ef4444; font-size: 0.75rem;" onclick="deleteTeamConstraint(${idx})">x</button>
             </li>
         `).join('');
     }
@@ -113,10 +147,13 @@ function renderConstraints() {
 
     const pcList = document.getElementById('personal-constraints-list');
     if (pcList) {
-        pcList.innerHTML = personalConstraints.map(pc => `
-            <li>
-                <div><strong>Cadet: ${pc.name} (${pc.pn})</strong></div>
-                <div style="color: var(--text-muted); font-size: 0.85rem;">Unavailable: ${pc.start}-${pc.end}</div>
+        pcList.innerHTML = personalConstraints.map((pc, idx) => `
+            <li style="display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                    <div><strong>Cadet: ${pc.name} (${pc.pn})</strong></div>
+                    <div style="color: var(--text-muted); font-size: 0.85rem;">Unavailable: ${pc.start}-${pc.end}</div>
+                </div>
+                <button class="btn" style="background: rgba(239, 68, 68, 0.2); color: #ef4444; padding: 2px 8px; border: 1px solid #ef4444; font-size: 0.75rem;" onclick="deletePersonalConstraint('${pc.pn}', '${pc.start}', '${pc.end}')">x</button>
             </li>
         `).join('');
     }
@@ -129,7 +166,27 @@ function renderConstraints() {
                 <td>${jc.job_type_a}</td>
                 <td>${jc.job_type_b}</td>
                 <td><span style="color: ${jc.can_overlap ? '#10b981' : '#ef4444'}">${jc.can_overlap ? 'Yes' : 'No'}</span></td>
-                <td><span style="color: ${jc.can_be_consecutive ? '#10b981' : '#ef4444'}">${jc.can_be_consecutive ? 'Yes' : 'No'}</span></td>
+                <td style="display: flex; justify-content: space-between; align-items: center;">
+                    <span style="color: ${jc.can_be_consecutive ? '#10b981' : '#ef4444'}">${jc.can_be_consecutive ? 'Yes' : 'No'}</span>
+                    <button class="btn" style="background: rgba(239, 68, 68, 0.2); color: #ef4444; padding: 2px 8px; border: 1px solid #ef4444; font-size: 0.75rem;" onclick="deleteJobMatrix('${jc.job_type_a}', '${jc.job_type_b}')">x</button>
+                </td>
+            </tr>
+        `).join('');
+    }
+
+    // Forbidden Jobs Table
+    const fjList = document.getElementById('forbidden-jobs-list');
+    if (fjList) {
+        fjList.innerHTML = cadets.filter(c => c.forbidden_jobs && c.forbidden_jobs.length > 0).map(c => `
+            <tr>
+                <td><strong>${c.name}</strong> (${c.personal_number})</td>
+                <td style="display: flex; gap: 8px; flex-wrap: wrap;">
+                    ${c.forbidden_jobs.map(job => `
+                        <span style="background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); color: #f87171; padding: 2px 6px; border-radius: 4px; font-size: 0.8rem; display: flex; align-items: center; gap: 4px;">
+                            ${job} <span style="cursor: pointer; font-weight: bold;" onclick="deleteForbiddenJob('${c.personal_number}', '${job}')">&times;</span>
+                        </span>
+                    `).join('')}
+                </td>
             </tr>
         `).join('');
     }
@@ -138,14 +195,60 @@ function renderConstraints() {
 function renderShifts() {
     const list = document.getElementById('shifts-list');
     if (list) {
-        list.innerHTML = shifts.map(s => `
-            <li>
-                <div><strong>Job: ${s.job_name}</strong> <span style="font-size:0.8rem; color:var(--text-muted)">Difficulty: ${s.difficulty}</span></div>
-                <div style="color: var(--text-muted); font-size: 0.85rem;">Slot: ${s.time_slot}</div>
+        list.innerHTML = shifts.map((s, idx) => `
+            <li style="display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                    <div><strong>Job: ${s.job_name}</strong> <span style="font-size:0.8rem; color:var(--text-muted)">Difficulty: ${s.difficulty}</span></div>
+                    <div style="color: var(--text-muted); font-size: 0.85rem;">Slot: ${s.time_slot}</div>
+                </div>
+                <button class="btn" style="background: rgba(239, 68, 68, 0.2); color: #ef4444; padding: 2px 8px; border: 1px solid #ef4444; font-size: 0.75rem;" onclick="deleteShift(${idx})">x</button>
             </li>
         `).join('');
     }
 }
+
+// Delete Logic
+window.deleteCadet = async (pn) => {
+    if (!confirm('Delete this cadet?')) return;
+    await fetch(`${API_BASE}/cadets/${encodeURIComponent(pn)}`, { method: 'DELETE' });
+    fetchData();
+};
+
+window.deleteJob = async (name) => {
+    if (!confirm('Delete this job? This will also permanently delete all shifts associated with this job.')) return;
+    await fetch(`${API_BASE}/jobs/${encodeURIComponent(name)}`, { method: 'DELETE' });
+    fetchData();
+};
+
+window.deleteShift = async (idx) => {
+    if (!confirm('Delete this shift?')) return;
+    await fetch(`${API_BASE}/shifts/${idx}`, { method: 'DELETE' });
+    fetchData();
+};
+
+window.deleteTeamConstraint = async (idx) => {
+    if (!confirm('Delete this team constraint?')) return;
+    await fetch(`${API_BASE}/team_constraints/${idx}`, { method: 'DELETE' });
+    fetchData();
+};
+
+window.deletePersonalConstraint = async (pn, start, end) => {
+    if (!confirm('Delete this personal constraint?')) return;
+    await fetch(`${API_BASE}/cadets/${encodeURIComponent(pn)}/constraints/${encodeURIComponent(start)}/${encodeURIComponent(end)}`, { method: 'DELETE' });
+    fetchData();
+};
+
+window.deleteJobMatrix = async (typeA, typeB) => {
+    if (!confirm('Delete this job matrix rule?')) return;
+    await fetch(`${API_BASE}/job_constraints/${encodeURIComponent(typeA)}/${encodeURIComponent(typeB)}`, { method: 'DELETE' });
+    fetchData();
+};
+
+window.deleteForbiddenJob = async (pn, job) => {
+    if (!confirm('Remove this forbidden job?')) return;
+    await fetch(`${API_BASE}/cadets/${encodeURIComponent(pn)}/forbidden_jobs/${encodeURIComponent(job)}`, { method: 'DELETE' });
+    fetchData();
+};
 
 // Midnight Crossover Logic Helper
 const computeTimeSlot = (dateStr, startH, endH) => {
@@ -164,18 +267,36 @@ const computeTimeSlot = (dateStr, startH, endH) => {
 // Form Submissions
 document.getElementById('add-cadet-form').addEventListener('submit', async (e) => {
     e.preventDefault();
-    const forbiddenSelect = document.getElementById('cadet-forbidden-jobs');
-    const selectedJobs = Array.from(forbiddenSelect.selectedOptions).map(opt => opt.value);
 
     const payload = {
         personal_number: document.getElementById('cadet-pn').value,
         name: document.getElementById('cadet-name').value,
         team: document.getElementById('cadet-team').value,
-        forbidden_jobs: selectedJobs,
+        forbidden_jobs: [], // Set via the other page now
         unavailable_slots: []
     };
 
     await fetch(`${API_BASE}/cadets`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    });
+    
+    e.target.reset();
+    fetchData();
+});
+
+document.getElementById('add-forbidden-job-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const forbiddenSelect = document.getElementById('fj-job-select');
+    const selectedJobs = Array.from(forbiddenSelect.selectedOptions).map(opt => opt.value);
+
+    const payload = {
+        personal_number: document.getElementById('fj-cadet-select').value,
+        forbidden_jobs: selectedJobs
+    };
+
+    await fetch(`${API_BASE}/cadet_forbidden_jobs`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
@@ -222,6 +343,114 @@ document.getElementById('add-shift-form').addEventListener('submit', async (e) =
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
     });
+    
+    e.target.reset();
+    fetchData();
+});
+
+document.getElementById('bulk-shift-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    
+    const job_name = document.getElementById('bulk-job-select').value;
+    const startDateStr = document.getElementById('bulk-start-date').value;
+    const endDateStr = document.getElementById('bulk-end-date').value;
+    const startH = document.getElementById('bulk-start-time').value; // "HH:MM"
+    const endH = document.getElementById('bulk-end-time').value; // "HH:MM"
+    const durationHours = parseFloat(document.getElementById('bulk-duration').value);
+    const parallelCount = parseInt(document.getElementById('bulk-parallel').value, 10);
+    const baseDifficulty = parseFloat(document.getElementById('bulk-difficulty').value);
+    const midnightBonus = parseFloat(document.getElementById('bulk-midnight-bonus').value);
+
+    let currentStart = new Date(`${startDateStr}T${startH}`);
+    let finalEnd = new Date(`${endDateStr}T${endH}`);
+    
+    // Fallback: If user accidentally sets end time slightly before start time on the exact same date
+    if (finalEnd <= currentStart && startDateStr === endDateStr) {
+        finalEnd.setDate(finalEnd.getDate() + 1);
+    }
+
+    const pad = (n) => n.toString().padStart(2, '0');
+    const formatLocalDate = (d) => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+
+    const promises = [];
+
+    while (currentStart < finalEnd) {
+        let chunkEnd = new Date(currentStart.getTime() + durationHours * 60 * 60 * 1000);
+        if (chunkEnd > finalEnd) {
+            chunkEnd = finalEnd; // Cap at the final end time
+        }
+
+        // Calculate midnight overlap (00:00 to 05:00)
+        let overlapHours = 0;
+        
+        const bonusStartStr = document.getElementById('bulk-bonus-start').value; // "HH:MM"
+        const bonusEndStr = document.getElementById('bulk-bonus-end').value; // "HH:MM"
+        const minOverlap = parseFloat(document.getElementById('bulk-min-overlap').value);
+
+        const [bSH, bSM] = bonusStartStr.split(':').map(Number);
+        const [bEH, bEM] = bonusEndStr.split(':').map(Number);
+        const isBonusCrossover = (bEH < bSH) || (bEH === bSH && bEM < bSM);
+
+        // We check the date of the start, the date before the start (in case of crossover), and the date of the end
+        const datesToCheck = [
+            new Date(currentStart.getFullYear(), currentStart.getMonth(), currentStart.getDate() - 1),
+            new Date(currentStart.getFullYear(), currentStart.getMonth(), currentStart.getDate()),
+            new Date(chunkEnd.getFullYear(), chunkEnd.getMonth(), chunkEnd.getDate())
+        ];
+        
+        // Remove duplicates if start and end are on the same day
+        const uniqueDates = [];
+        const seen = new Set();
+        for (const d of datesToCheck) {
+            if (!seen.has(d.getTime())) {
+                seen.add(d.getTime());
+                uniqueDates.push(d);
+            }
+        }
+
+        for (const d of uniqueDates) {
+            const mStart = new Date(d);
+            mStart.setHours(bSH, bSM, 0, 0);
+            
+            const mEnd = new Date(d);
+            mEnd.setHours(bEH, bEM, 0, 0);
+            if (isBonusCrossover) {
+                mEnd.setDate(mEnd.getDate() + 1);
+            }
+
+            const overlapStart = Math.max(currentStart.getTime(), mStart.getTime());
+            const overlapEnd = Math.min(chunkEnd.getTime(), mEnd.getTime());
+            
+            if (overlapEnd > overlapStart) {
+                overlapHours += (overlapEnd - overlapStart) / (1000 * 60 * 60);
+            }
+        }
+
+        const shiftDifficulty = (overlapHours >= minOverlap) ? (baseDifficulty + midnightBonus) : baseDifficulty;
+
+        const timeSlotStr = `${formatLocalDate(currentStart)}-${formatLocalDate(chunkEnd)}`;
+
+        const payload = {
+            job_name: job_name,
+            time_slot: timeSlotStr,
+            difficulty: shiftDifficulty
+        };
+
+        // Create N parallel shifts
+        for (let i = 0; i < parallelCount; i++) {
+            promises.push(
+                fetch(`${API_BASE}/shifts`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                })
+            );
+        }
+
+        currentStart = chunkEnd;
+    }
+
+    await Promise.all(promises);
     
     e.target.reset();
     fetchData();
@@ -372,7 +601,7 @@ document.getElementById('upload-cadets-btn').addEventListener('click', () => {
                 personal_number: row.personal_number,
                 name: row.name || '',
                 team: row.team || '',
-                forbidden_jobs: row.forbidden_jobs ? row.forbidden_jobs.split(';').map(s=>s.trim()).filter(s=>s) : [],
+                forbidden_jobs: [], // Managed via the Forbidden Jobs page now
                 unavailable_slots: []
             };
             await fetch(`${API_BASE}/cadets`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload) });

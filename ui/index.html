@@ -22,7 +22,9 @@
                 <li class="active" data-view="dashboard">Dashboard</li>
                 <li data-view="cadets">Cadets & Teams</li>
                 <li data-view="jobs">Jobs & Shifts</li>
-                <li data-view="constraints">Constraints</li>
+                <li data-view="time-constraints">Time Constraints</li>
+                <li data-view="job-matrix">Job Matrix</li>
+                <li data-view="forbidden-jobs">Forbidden Jobs</li>
             </ul>
         </nav>
 
@@ -64,13 +66,7 @@
                                 <option value="">Loading teams...</option>
                             </select>
                         </div>
-                        <div class="form-group">
-                            <label>Forbidden Jobs</label>
-                            <select id="cadet-forbidden-jobs" multiple style="height: 100px;">
-                                <option value="">Loading jobs...</option>
-                            </select>
-                            <small style="color: var(--text-muted); font-size: 0.75rem;">Hold Cmd/Ctrl to select multiple.</small>
-                        </div>
+
                         <button type="submit" class="btn btn-secondary">Add Cadet</button>
                     </form>
                 </div>
@@ -79,9 +75,10 @@
                     <table class="data-table">
                         <thead>
                             <tr>
-                                <th>PN</th>
+                                <th>Personal Number</th>
                                 <th>Name</th>
                                 <th>Team</th>
+                                <th style="width: 50px;">Action</th>
                                 <th>Forbidden Jobs</th>
                             </tr>
                         </thead>
@@ -93,8 +90,8 @@
                 <div class="glass-card">
                     <h3>Bulk Upload Cadets (CSV)</h3>
                     <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 12px;">
-                        Format: <code>personal_number,name,unavailable_hours,forbidden_jobs,gender,team,platoon</code><br>
-                        (Use semicolons <code>;</code> to separate multiple forbidden jobs or unavailable hours)
+                        Format: <code>name,personal_number,team</code><br>
+                        (Additional columns will be ignored)
                     </p>
                     <div class="form-group">
                         <input type="file" id="cadets-csv-file" accept=".csv">
@@ -118,6 +115,21 @@
                         </div>
                         <button type="submit" class="btn btn-secondary">Add Job</button>
                     </form>
+                </div>
+                <div class="glass-card">
+                    <h3>Active Jobs</h3>
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Job Name</th>
+                                <th>Type</th>
+                                <th style="width: 50px;">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="jobs-list">
+                            <!-- Populated by JS -->
+                        </tbody>
+                    </table>
                 </div>
                 <div class="glass-card">
                     <h3>Define a Job Shift</h3>
@@ -147,6 +159,78 @@
                         <button type="submit" class="btn btn-secondary">Add Shift</button>
                     </form>
                 </div>
+
+                <div class="glass-card">
+                    <h3>Generate Shifts in Bulk</h3>
+                    <form id="bulk-shift-form" class="dynamic-form">
+                        <div class="form-group">
+                            <label>Select Job</label>
+                            <select id="bulk-job-select" required>
+                                <option value="">Loading jobs...</option>
+                            </select>
+                        </div>
+                        <div style="display: flex; gap: 16px;">
+                            <div class="form-group" style="flex: 1;">
+                                <label>Start Date</label>
+                                <input type="date" id="bulk-start-date" required>
+                            </div>
+                            <div class="form-group" style="flex: 1;">
+                                <label>End Date</label>
+                                <input type="date" id="bulk-end-date" required>
+                            </div>
+                        </div>
+                        <div style="display: flex; gap: 16px;">
+                            <div class="form-group" style="flex: 1;">
+                                <label>Overall Start Time</label>
+                                <input type="time" id="bulk-start-time" required>
+                            </div>
+                            <div class="form-group" style="flex: 1;">
+                                <label>Overall End Time</label>
+                                <input type="time" id="bulk-end-time" required>
+                            </div>
+                        </div>
+                        <div style="display: flex; gap: 16px;">
+                            <div class="form-group" style="flex: 1;">
+                                <label>Shift Duration (Hours)</label>
+                                <input type="number" id="bulk-duration" min="0.5" step="0.5" value="4" required>
+                            </div>
+                            <div class="form-group" style="flex: 1;">
+                                <label>Parallel Shifts</label>
+                                <input type="number" id="bulk-parallel" min="1" value="1" required>
+                            </div>
+                            <div class="form-group" style="flex: 1;">
+                                <label>Base Difficulty</label>
+                                <input type="number" id="bulk-difficulty" min="1" max="10" value="5" required>
+                            </div>
+                            <div class="form-group" style="flex: 1;">
+                                <label>Midnight Bonus (Points)</label>
+                                <input type="number" id="bulk-midnight-bonus" min="0" max="10" value="2" required>
+                            </div>
+                        </div>
+                        <div style="background: rgba(16, 185, 129, 0.05); padding: 12px; border: 1px solid rgba(16, 185, 129, 0.2); border-radius: 8px; margin-top: 12px;">
+                            <h4 style="margin-top: 0; margin-bottom: 8px; font-size: 0.95rem; color: #34d399;">Automatic Bonus Settings</h4>
+                            <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 12px;">
+                                If a generated shift overlaps with the specific time window defined below for at least the "Min Overlap Hours", it will automatically receive the Midnight Bonus points on top of the Base Difficulty.
+                            </p>
+                            <div style="display: flex; gap: 16px;">
+                                <div class="form-group" style="flex: 1;">
+                                    <label>Bonus Window Start</label>
+                                    <input type="time" id="bulk-bonus-start" value="00:00" required>
+                                </div>
+                                <div class="form-group" style="flex: 1;">
+                                    <label>Bonus Window End</label>
+                                    <input type="time" id="bulk-bonus-end" value="05:00" required>
+                                </div>
+                                <div class="form-group" style="flex: 1;">
+                                    <label>Min Overlap (Hours)</label>
+                                    <input type="number" id="bulk-min-overlap" min="0.5" step="0.5" value="2.0" required>
+                                </div>
+                            </div>
+                        </div>
+                        <button type="submit" class="btn btn-primary" style="margin-top: 12px;">Generate Shifts</button>
+                    </form>
+                </div>
+
                 <div class="glass-card">
                     <h3>Active Shifts</h3>
                     <ul id="shifts-list" class="constraint-list">
@@ -165,10 +249,10 @@
                 </div>
             </section>
 
-            <!-- Constraints View -->
-            <section id="view-constraints" class="view-section">
+            <!-- Time Constraints View -->
+            <section id="view-time-constraints" class="view-section">
                 <div class="glass-card">
-                    <h3>Add Team Constraint</h3>
+                    <h3>Add Team Time Constraint</h3>
                     <form id="team-constraint-form" class="dynamic-form">
                         <div class="form-group">
                             <label>Select Team</label>
@@ -193,7 +277,7 @@
                 </div>
                 
                 <div class="glass-card">
-                    <h3>Add Personal Constraint</h3>
+                    <h3>Add Personal Time Constraint</h3>
                     <form id="cadet-constraint-form" class="dynamic-form">
                         <div class="form-group">
                             <label>Select Cadet</label>
@@ -218,15 +302,49 @@
                 </div>
 
                 <div class="glass-card">
+                    <h3>Active Team Time Constraints</h3>
+                    <ul id="team-constraints-list" class="constraint-list">
+                        <!-- Populated by JS -->
+                    </ul>
+                </div>
+
+                <div class="glass-card">
+                    <h3>Active Personal Time Constraints</h3>
+                    <ul id="personal-constraints-list" class="constraint-list">
+                        <!-- Populated by JS -->
+                    </ul>
+                </div>
+            </section>
+
+            <!-- Job Matrix View -->
+            <section id="view-job-matrix" class="view-section">
+                <div class="glass-card">
+                    <h3 style="color: var(--primary-color);">How the Matrix Works</h3>
+                    <p style="font-size: 0.9rem; color: var(--text-main); margin-bottom: 8px;">
+                        By default, the optimization engine will mathematically <strong>FORBID a single cadet from performing two jobs at the same time</strong>. Multiple jobs can exist at the exact same time, but they must be assigned to different cadets.
+                    </p>
+                    <p style="font-size: 0.9rem; color: var(--text-muted);">
+                        You only need to use this matrix to explicitly <strong>ALLOW</strong> exceptions to this rule (e.g. allowing 'dynamic guarding' to overlap with 'jobs at the base' for the same cadet).
+                    </p>
+                    <div style="margin-top: 12px; padding: 8px; background: rgba(59, 130, 246, 0.1); border-left: 3px solid #3b82f6; font-size: 0.85rem; color: #60a5fa;">
+                        <strong>System Wildcard:</strong> The engine is hardcoded to allow <em>'jobs at the base'</em> and <em>'dynamic guarding' (cafcaf)</em> to be consecutive with ANY other job type. You will not see this listed in the active matrix below, but it applies universally under the hood!
+                    </div>
+                </div>
+                
+                <div class="glass-card">
                     <h3>Add Job Compatibility (Matrix)</h3>
                     <form id="job-matrix-form" class="dynamic-form">
                         <div class="form-group">
                             <label>Job Type A</label>
-                            <input type="text" id="jm-type-a" placeholder="E.g., guarding" required>
+                            <select id="jm-type-a" required>
+                                <option value="">Loading job types...</option>
+                            </select>
                         </div>
                         <div class="form-group">
                             <label>Job Type B</label>
-                            <input type="text" id="jm-type-b" placeholder="E.g., cleaning" required>
+                            <select id="jm-type-b" required>
+                                <option value="">Loading job types...</option>
+                            </select>
                         </div>
                         <div style="display: flex; gap: 16px; margin-top: 8px;">
                             <label style="display: flex; align-items: center; gap: 8px; font-size: 0.9rem; cursor: pointer;">
@@ -258,19 +376,45 @@
                         </tbody>
                     </table>
                 </div>
+            </section>
 
+            <!-- Forbidden Jobs View -->
+            <section id="view-forbidden-jobs" class="view-section">
                 <div class="glass-card">
-                    <h3>Active Team Constraints</h3>
-                    <ul id="team-constraints-list" class="constraint-list">
-                        <!-- Populated by JS -->
-                    </ul>
+                    <h3 style="color: var(--primary-color);">Forbidden Jobs</h3>
+                    <p style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 16px;">
+                        Assign specific jobs that individual cadets are strictly forbidden from performing.
+                    </p>
+                    <form id="add-forbidden-job-form" class="dynamic-form">
+                        <div class="form-group">
+                            <label>Select Cadet</label>
+                            <select id="fj-cadet-select" required>
+                                <option value="">Loading cadets...</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Select Jobs to Forbid</label>
+                            <select id="fj-job-select" multiple style="height: 120px;" required>
+                                <option value="">Loading jobs...</option>
+                            </select>
+                            <small style="color: var(--text-muted); font-size: 0.75rem;">Hold Cmd/Ctrl to select multiple.</small>
+                        </div>
+                        <button type="submit" class="btn btn-secondary">Add Forbidden Jobs</button>
+                    </form>
                 </div>
-
                 <div class="glass-card">
-                    <h3>Active Personal Constraints</h3>
-                    <ul id="personal-constraints-list" class="constraint-list">
-                        <!-- Populated by JS -->
-                    </ul>
+                    <h3>Current Forbidden Jobs List</h3>
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Cadet</th>
+                                <th>Forbidden Jobs</th>
+                            </tr>
+                        </thead>
+                        <tbody id="forbidden-jobs-list">
+                            <!-- Populated by JS -->
+                        </tbody>
+                    </table>
                 </div>
             </section>
         </main>
