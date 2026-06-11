@@ -18,7 +18,7 @@ class JobConstraint(BaseModel):
 class TeamConstraint(BaseModel):
     """A constraint applied to an entire team."""
     model_config = ConfigDict(frozen=True)
-    
+
     team: str
     unavailable_slots: List[TimeSlot] = []
 
@@ -42,7 +42,7 @@ class ConstraintIndex:
     def can_overlap(self, job_type_a: str, job_type_b: str) -> bool:
         key = (job_type_a, job_type_b)
         constraint = self._constraints.get(key)
-        if constraint is None:
+        if constraint is None: #
             return False  # Default: incompatible
         return constraint.can_overlap
 
