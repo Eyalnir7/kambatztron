@@ -12,7 +12,15 @@ from output.evaluator import Evaluator
 
 
 class ShiftSchedulerApp:
-    def run(self, cadets_path: str, jobs_path: str, constraints_path: str, output_path: str) -> None:
+    def run(
+        self,
+        cadets_path: str,
+        jobs_path: str,
+        constraints_path: str,
+        output_path: str,
+        T_rest: float = 8.0,
+        rho: float = 2.0,
+    ) -> None:
         cadets = CadetCSVReader.read(cadets_path)
         jobs = JobJSONReader.read(jobs_path)
         constraints = ConstraintsCSVReader.read(constraints_path)
@@ -21,7 +29,7 @@ class ShiftSchedulerApp:
         if not result.is_valid:
             raise ValueError("Validation failed: " + "; ".join(result.errors))
 
-        context = build_context(cadets=cadets, jobs=jobs, constraint_index=constraints)
+        context = build_context(cadets=cadets, jobs=jobs, constraint_index=constraints, T_rest=T_rest, rho=rho)
 
         assigner = GreedyShiftAssigner()
         schedule = assigner.assign(context)

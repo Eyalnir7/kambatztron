@@ -43,7 +43,7 @@ A cadet cannot be assigned to a shift overlapping with their unavailable time sl
 
 **3. Forbidden Jobs (Hard):**
 A cadet cannot be assigned to a job they are not qualified or allowed to do.
-\[ X_{c, s} = 0 \quad \forall c \in C, \forall s \in S \text{ if job}(s) \in F_c \]
+$ X_{c, s} = 0 \quad \forall c \in C, \forall s \in S \text{ if job}(s) \in F_c $
 
 **4. Unified Shift Compatibility Constraint (Hard):**
 This replaces the previous non-overlapping and consecutive constraints. A cadet cannot be assigned to any pair of shifts that are deemed incompatible by the quadratic binary matrix $Q$. This allows for concurrent or consecutive shifts *only* if explicitly permitted by the matrix.
@@ -57,7 +57,7 @@ For every pair of compatible shifts $(s_1, s_2)$ where the gap is $0 < \text{sta
 The objective is to minimize the maximum total workload score across all cadets, where the workload includes the base shift difficulty and any accrued penalties for inadequate rest.
 
 Workload definition for cadet $c$:
-\[ W_c = \sum_{s \in S} (X_{c, s} \cdot D_s \cdot L_s) + \rho \sum_{(s_1, s_2) \in E_{close}} Y_{c, s_1, s_2} \quad \forall c \in C \]
+$ W_c = \sum_{s \in S} (X_{c, s} \cdot D_s \cdot L_s) + \rho \sum_{(s_1, s_2) \in E_{close}} Y_{c, s_1, s_2} \quad \forall c \in C $
 *(where $E_{close}$ is the set of all shift pairs with a gap less than $T_{rest}$)*
 
 Minimax constraint:
