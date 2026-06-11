@@ -12,6 +12,8 @@ The main goal is to assign cadets to jobs and time slots while enforcing hard co
 
 For the MVP, the system will be implemented as a Python script that receives input files as command-line arguments and outputs the resulting schedule as an Excel file.
 
+Implementation note: the current codebase already uses an OR-Tools CP-SAT solver and writes evaluation artifacts next to the main schedule export during development runs.
+
 ---
 
 ## 2. Main Goals
@@ -367,7 +369,7 @@ The MVP algorithm should:
 
 The MVP does not need to guarantee the mathematically optimal solution.
 
-A simple heuristic, greedy algorithm, backtracking algorithm, or local-search approach is acceptable.
+A CP-SAT solver is the current implementation choice, but a heuristic, backtracking algorithm, or local-search approach would also satisfy the original requirements if the hard constraints remain enforced.
 
 Hard constraints must never be violated.
 
@@ -400,6 +402,8 @@ Preferred MVP option:
 ```text
 One worksheet per job type
 ```
+
+Implementation note: the current exporter also adds a legend sheet that maps team/platoon combinations to colors, and it can fall back to CSV output when the target path is not an `.xlsx` file.
 
 ### 9.1 Table Format
 
@@ -569,6 +573,7 @@ These questions should be resolved before or during implementation:
 5. Should colors be assigned automatically by team/platoon, or configured manually?
 6. Should unavailable hours support recurring rules, or only explicit date-time ranges?
 7. Should the solver use a greedy heuristic, backtracking, local search, or a constraint solver library?
+  Current implementation answer: a constraint solver library, specifically OR-Tools CP-SAT.
 8. How should the system behave if there are multiple valid solutions with similar fairness?
 9. Should the system print partial diagnostic information when no solution is found?
 10. Should the input form generate exactly the same schema as the CSV expected by the script?

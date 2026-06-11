@@ -6,7 +6,7 @@
 
 Kabmatztron is a Python-based shift scheduling system for assigning cadets to battalion duties.
 
-The project is currently an MVP focused on reading structured input files, validating constraints, assigning cadets to shifts, and exporting the resulting schedule as readable Excel tables.
+The current implementation uses an OR-Tools CP-SAT model to read structured input files, validate constraints, assign cadets to shifts, and export the resulting schedule as readable Excel tables. The repository also includes an experimental web UI/API prototype under `ui/` and `api/`, but the CLI remains the primary MVP entry point.
 
 ## What the project does
 
@@ -164,15 +164,9 @@ If no valid assignment exists, the program should fail clearly and report that n
 
 Kabmatztron tries to distribute work fairly between individual cadets.
 
-The initial workload score is based on:
+The current implementation minimizes the maximum per-cadet workload, where workload is based on shift difficulty, shift duration, and close-shift penalties.
 
-- Shift difficulty
-- Shift duration
-- Total assigned workload per cadet
-
-The exact fairness formula may evolve as the project develops.
-
-The current design keeps the fairness logic isolated so that the MVP greedy assigner can later be replaced by a stronger optimization algorithm such as CP-SAT, local search, or another constraint solver.
+The workload logic is kept inside the solver so the assignment model can evolve without changing the readers or exporter.
 
 ## Architecture
 
@@ -200,16 +194,13 @@ ShiftSchedulerApp
    ScheduleContext
           │
           ▼
-   GreedyShiftAssigner
+   CpsatShiftAssigner / SchedulingProblem
           │
           ▼
    Schedule
           │
-          ▼
-   ExcelExporter
-          │
-          ▼
-   schedule.xlsx
+          ├── ExcelExporter ──► schedule.xlsx
+          └── Evaluator ──► evaluation/ (CSV, JSON, PNG)
 ```
 
 ## Planned file structure
@@ -224,7 +215,7 @@ shift_scheduler/
 │   ├── cadet.py                # Cadet
 │   ├── job.py                  # Job, Shift
 │   └── constraints.py          # JobConstraint, ConstraintIndex
-├── io/
+├── readers/
 │   ├── __init__.py
 │   ├── cadet_reader.py         # CadetCSVReader
 │   ├── job_reader.py           # JobJSONReader
@@ -235,11 +226,12 @@ shift_scheduler/
 ├── scheduling/
 │   ├── __init__.py
 │   ├── context.py              # ScheduleContext
-│   ├── assigner.py             # ShiftAssigner, GreedyShiftAssigner
-│   ├── workload.py             # WorkloadTracker
+│   ├── assigner.py             # ShiftAssigner, CpsatShiftAssigner
+│   ├── solver.py               # SchedulingProblem (CP-SAT model)
 │   └── schedule.py             # Schedule
 └── output/
     ├── __init__.py
+    ├── evaluator.py            # CSV/JSON/PNG evaluation artifacts
     └── excel_exporter.py       # ExcelExporter
 ```
 
@@ -276,6 +268,8 @@ Example:
 |---|---|---|
 | Gate Guard 1 | David Cohen | Yossi Levi |
 | Gate Guard 2 | Amit Mizrahi | Noa Bar |
+
+The workbook also includes a legend sheet that maps each team/platoon combination to the color used in the schedule. If the output path does not end in `.xlsx`, the exporter currently falls back to a CSV directory with one file per job type.
 
 ## Validation
 

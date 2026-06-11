@@ -1,7 +1,9 @@
 # Kambatztron: Shift Scheduling Optimization Problem
 
 ## 1. Problem Description
-The goal of Kambatztron is to assign a pool of military cadets to various battalion duties over a defined time horizon. The shift blocks are strictly fixed in time. The difficulty of each shift is dynamically evaluated based on its specific time block (e.g., night shifts are weighted heavier than day shifts). The primary objective is to distribute the workload fairly among cadets while strictly adhering to availability, a unified shift compatibility matrix, and penalizing schedules with inadequate rest time between shifts.
+The goal of Kambatztron is to assign a pool of military cadets to various battalion duties over a defined time horizon. The shift blocks are strictly fixed in time. The current implementation uses an OR-Tools CP-SAT model to evaluate each shift using its specific time block, enforce availability and compatibility rules, and minimize the maximum per-cadet workload while penalizing schedules with inadequate rest time between shifts.
+
+The repository currently exports both the schedule workbook and a set of evaluation artifacts (CSV, JSON, and plots) for internal inspection.
 
 ## 2. Mathematical Formulation
 

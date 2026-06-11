@@ -1,38 +1,46 @@
-# Shift Scheduler — OOP Design
+# Shift Scheduler — CP-SAT Design
 
 ## High-Level Architecture
 
-The pipeline has 4 clear stages: **Parse → Validate → Solve → Export**.
-Each stage is a clean boundary, designed around the domain model first, then the pipeline components.
+The current pipeline is:
+
+**Parse → Validate → Solve → Export → Evaluate**
 
 ```
 CLI args
    │
    ▼
 ShiftSchedulerApp
-   ├── CadetCSVReader    ──┐
-   ├── JobJSONReader     ──┼──► InputValidator ──► ScheduleContext
-   └── ConstraintsReader ──┘          │
-                                      │ (abort on error)
-                                      ▼
-                              GreedyShiftAssigner
-                              + WorkloadTracker
-                                      │
-                                      ▼
-                               Schedule
-                                      │
-                                      ▼
-                               ExcelExporter ──► schedule.xlsx
+   ├── CadetCSVReader
+   ├── JobJSONReader
+   └── ConstraintsCSVReader
+          │
+          ▼
+   InputValidator
+          │
+          ▼
+   ScheduleContext
+          │
+          ▼
+   CpsatShiftAssigner
+          │
+          ▼
+   SchedulingProblem (OR-Tools CP-SAT)
+          │
+          ▼
+   Schedule
+          ├── ExcelExporter ──► schedule.xlsx
+          └── Evaluator ──► evaluation/ (CSV, JSON, PNG)
 ```
 
 ---
 
 ## 1. Domain Model
 
-Pure data containers — no business logic, just structure.
-Implemented as `@dataclass` or Pydantic models.
+The domain layer is made of small data objects that keep scheduling logic concentrated in one place.
 
 ### `TimeSlot`
+
 ```
 TimeSlot
   - start: datetime
@@ -40,15 +48,16 @@ TimeSlot
   + overlaps(other: TimeSlot) -> bool
   + is_consecutive_with(other: TimeSlot) -> bool
 ```
-A first-class object so that overlap/consecutive logic lives in one place,
-not scattered across readers and the solver.
+
+This class owns the overlap and consecutive checks so the readers and solver do not duplicate date logic.
 
 ---
 
 ### `Cadet`
+
 ```
 Cadet
-  - personal_number: str        # primary key
+  - personal_number: str
   - name: str
   - unavailable_slots: list[TimeSlot]
   - forbidden_jobs: list[str]
@@ -57,9 +66,12 @@ Cadet
   - platoon: str
 ```
 
+`team` and `platoon` are used for output coloring, not for scheduling constraints.
+
 ---
 
 ### `Job`
+
 ```
 Job
   - name: str
@@ -67,9 +79,12 @@ Job
   - difficulty_by_slot: dict[TimeSlot, float]
 ```
 
+Each job is defined with a difficulty value for every required time slot.
+
 ---
 
-### `Shift`  _(the assignable unit — a Job × TimeSlot pair)_
+### `Shift`
+
 ```
 Shift
   - job: Job
@@ -78,9 +93,12 @@ Shift
   - assigned_cadet: Cadet | None
 ```
 
+A shift is the atomic assignment unit used by the solver.
+
 ---
 
 ### `JobConstraint`
+
 ```
 JobConstraint
   - job_type_a: str
@@ -91,53 +109,82 @@ JobConstraint
 
 ---
 
+### `TeamConstraint`
+
+```
+TeamConstraint
+  - team: str
+  - unavailable_slots: list[TimeSlot]
+```
+
+Team constraints are injected into cadet unavailability during context construction.
+
+---
+
+### `ConstraintIndex`
+
+```
+ConstraintIndex
+  - _constraints: dict[tuple[str, str], JobConstraint]
+  - team_constraints: list[TeamConstraint]
+  + can_overlap(type_a: str, type_b: str) -> bool
+  + can_be_consecutive(type_a: str, type_b: str) -> bool
+  + get_team_unavailabilities(team: str) -> list[TimeSlot]
+```
+
+The index stores job-type compatibility in both directions for fast lookups during solver setup.
+
+---
+
 ## 2. Input Layer
 
-One reader class per file type, each returning domain objects.
+Each file type has its own reader class.
 
 ### `CadetCSVReader`
+
 ```
 CadetCSVReader
   + read(path: str) -> list[Cadet]
 ```
 
 ### `JobJSONReader`
+
 ```
 JobJSONReader
   + read(path: str) -> list[Job]
 ```
 
 ### `ConstraintsCSVReader`
+
 ```
 ConstraintsCSVReader
-  + read(path: str) -> list[JobConstraint]
+  + read(path: str) -> ConstraintIndex
 ```
+
+The constraints reader returns a prebuilt `ConstraintIndex`, not a raw row list.
 
 ---
 
 ## 3. Validation Layer
 
-Receives all parsed data and runs every check defined in the requirements.
-Separated from parsing so both layers stay focused and independently testable.
+The validator is intentionally narrow in the current codebase: it checks basic structural consistency, while the requirements document captures the broader intended validation rules.
 
 ### `InputValidator`
+
 ```
 InputValidator
-  + validate(
-      cadets: list[Cadet],
-      jobs: list[Job],
-      constraints: list[JobConstraint]
-    ) -> ValidationResult
-
-  # Internal checks:
-  - _validate_cadets()              # unique personal numbers, required fields, time slot format
-  - _validate_jobs()                # job types present, time slot format, difficulty range 1–10
-  - _validate_constraints()         # referenced job types exist, boolean values valid
-  - _validate_cross_references()    # forbidden jobs exist in jobs JSON,
-                                    # time slot consistency per job type
+  + validate(cadets: list[Cadet], jobs: list[Job], constraints: ConstraintIndex) -> ValidationResult
 ```
 
+Current checks include:
+
+- duplicate cadet personal numbers
+- missing cadet names or personal numbers
+- duplicate job names
+- constraints object type sanity
+
 ### `ValidationResult`
+
 ```
 ValidationResult
   - is_valid: bool
@@ -149,119 +196,128 @@ ValidationResult
 ## 4. Scheduling Layer
 
 ### `ScheduleContext`
-A single bag of everything the solver needs — built once after validation passes.
+
 ```
 ScheduleContext
   - cadets: list[Cadet]
-  - shifts: list[Shift]            # flattened from all jobs × time slots
+  - shifts: list[Shift]
   - constraint_index: ConstraintIndex
 ```
 
-### `ConstraintIndex`
-Pre-built lookup tables for fast O(1) queries during the assignment loop.
-```
-ConstraintIndex
-  - cadet_by_id: dict[str, Cadet]
-  - constraint_by_type_pair: dict[tuple[str, str], JobConstraint]
-  + can_overlap(type_a: str, type_b: str) -> bool
-  + can_be_consecutive(type_a: str, type_b: str) -> bool
-```
+`build_context()` also injects team-level unavailabilities into the cadet list before the solver runs.
 
-### `ShiftAssigner`  _(abstract base)_
-Defines the solver interface. Swap implementations without touching anything else.
+---
+
+### `ShiftAssigner`
+
 ```
 ShiftAssigner  (ABC)
   + assign(context: ScheduleContext) -> Schedule
 ```
 
-### `GreedyShiftAssigner(ShiftAssigner)`  _(MVP implementation)_
+This interface keeps the solver isolated from the orchestration and export code.
+
+---
+
+### `CpsatShiftAssigner`
+
 ```
-GreedyShiftAssigner
-  - workload_tracker: WorkloadTracker
+CpsatShiftAssigner
+  - t_rest_hours: float
+  - rho: float
   + assign(context: ScheduleContext) -> Schedule
-
-  # Internal helpers:
-  - _get_eligible_cadets(shift, assigned_so_far) -> list[Cadet]
-  - _check_availability(cadet, shift) -> bool
-  - _check_forbidden(cadet, shift) -> bool
-  - _check_no_overlap(cadet, shift, assigned_so_far) -> bool
-  - _check_not_consecutive(cadet, shift, assigned_so_far) -> bool
 ```
 
-### `WorkloadTracker`
-Maintains workload scores and selects the least-loaded eligible cadet.
-```
-WorkloadTracker
-  - scores: dict[Cadet, float]
-  + update(cadet: Cadet, shift: Shift)
-  + get_score(cadet: Cadet) -> float
-  + least_loaded(candidates: list[Cadet]) -> Cadet
+The current implementation creates a `SchedulingProblem`, solves it with OR-Tools CP-SAT, and writes the chosen cadets back into the shift objects.
 
-  # Workload formula (per requirements §7.1):
-  # score = geometric_mean(assigned_difficulties) × total_assigned_hours
+---
+
+### `SchedulingProblem`
+
 ```
+SchedulingProblem
+  - X[(cadet_idx, shift_idx)] -> BoolVar
+  - Y[(cadet_idx, shift_idx_a, shift_idx_b)] -> BoolVar
+  - W_max: IntVar
+  + solve() -> (CpSolver, status)
+```
+
+The model enforces:
+
+- exactly one cadet per shift
+- cadet availability
+- forbidden jobs
+- overlap compatibility by job type
+- consecutive compatibility by job type
+- a minimax workload objective with close-shift penalties
+
+The objective minimizes the maximum workload across cadets, where workload is encoded as `difficulty × duration + penalty`.
+
+---
 
 ### `Schedule`
-The output of the solver — a list of fully assigned shifts.
+
 ```
 Schedule
-  - assignments: list[Shift]     # all shifts, assigned_cadet filled in
-  + is_complete() -> bool        # True if every shift has an assigned cadet
+  - assignments: list[Shift]
+  + is_complete() -> bool
 ```
+
+The schedule is considered complete when every shift has an assigned cadet.
 
 ---
 
 ## 5. Output Layer
 
 ### `ExcelExporter`
+
 ```
 ExcelExporter
   + export(schedule: Schedule, cadets: list[Cadet], path: str)
-
-  # Internal helpers:
-  - _build_color_map(cadets: list[Cadet]) -> dict[tuple[str, str], str]
-    # maps (team, platoon) → hex color string; generated automatically
-  - _write_job_type_sheet(workbook, job_type: str, shifts: list[Shift])
-    # rows = job names, columns = time slots, cells = cadet names (colored)
 ```
 
-Output layout (per requirements §9):
+Internal behavior:
+
 - One worksheet per job type.
-- Rows = job names.
-- Columns = time slots.
-- Cell values = assigned cadet name, colored by team × platoon.
+- Rows are job names.
+- Columns are time slots.
+- Cell values are cadet names.
+- Cadet names are colored by team/platoon combination.
+- A legend sheet is added automatically.
+- If the output path does not end in `.xlsx`, a CSV fallback directory is written instead.
+
+### `Evaluator`
+
+```
+Evaluator
+  + evaluate(schedule: Schedule, cadets: list[Cadet], output_path: str) -> None
+```
+
+The evaluator writes development artifacts beside the schedule output:
+
+- `cadet_stats.csv`
+- `summary.json`
+- difficulty, hours, and workload plots as PNG files
 
 ---
 
 ## 6. Orchestrator
 
-The script entry point — thin glue that calls each stage in order.
+### `ShiftSchedulerApp`
 
 ```
 ShiftSchedulerApp
-  + run(
-      cadets_path: str,
-      jobs_path: str,
-      constraints_path: str,
-      output_path: str
-    )
-
-  # Execution order:
-  # 1. Read all input files via the three readers.
-  # 2. Run InputValidator; abort with error messages on failure.
-  # 3. Build ScheduleContext (flatten jobs → shifts, build ConstraintIndex).
-  # 4. Run ShiftAssigner.assign(); abort if no solution found.
-  # 5. Run ExcelExporter.export().
+  + run(cadets_path: str, jobs_path: str, constraints_path: str, output_path: str)
 ```
 
-CLI usage (per requirements §11):
-```bash
-python shift_scheduler.py \
-  --cadets cadets.csv \
-  --jobs jobs.json \
-  --constraints job_constraints.csv \
-  --output schedule.xlsx
-```
+Execution order:
+
+1. Read cadets, jobs, and constraints.
+2. Validate the parsed inputs.
+3. Build a `ScheduleContext`.
+4. Run `CpsatShiftAssigner.assign()`.
+5. Export the workbook.
+6. Generate evaluation artifacts.
 
 ---
 
@@ -269,12 +325,11 @@ python shift_scheduler.py \
 
 | Decision | Rationale |
 |---|---|
-| `TimeSlot` as a first-class object | Overlap and consecutive logic lives in one place, not scattered |
-| Flat `list[Shift]` as solver input | Decouples job structure from assignment logic |
-| `ConstraintIndex` pre-built before solving | O(1) lookups during the hot assignment loop |
-| Abstract `ShiftAssigner` | Trivial to swap greedy MVP for CP-SAT or local search later |
-| Validation as a separate class | Readers stay simple; all cross-file checks are in one auditable place |
-| `WorkloadTracker` as a separate class | Fairness logic is isolated and easy to swap out (§7.2 notes the formula may change) |
+| `TimeSlot` as a first-class object | Keeps date arithmetic centralized |
+| Flat `list[Shift]` as solver input | Makes the CP-SAT model simple to index |
+| `ConstraintIndex` built before solving | Fast compatibility checks during model construction |
+| `CpsatShiftAssigner` behind an ABC | Keeps the solver swappable in the future |
+| Separate `Evaluator` | Keeps diagnostics out of the core export path |
 
 ---
 
@@ -289,8 +344,8 @@ shift_scheduler/
 │   ├── time_slot.py            # TimeSlot
 │   ├── cadet.py                # Cadet
 │   ├── job.py                  # Job, Shift
-│   └── constraints.py          # JobConstraint, ConstraintIndex
-├── io/
+│   └── constraints.py          # JobConstraint, TeamConstraint, ConstraintIndex
+├── readers/
 │   ├── __init__.py
 │   ├── cadet_reader.py         # CadetCSVReader
 │   ├── job_reader.py           # JobJSONReader
@@ -301,10 +356,11 @@ shift_scheduler/
 ├── scheduling/
 │   ├── __init__.py
 │   ├── context.py              # ScheduleContext
-│   ├── assigner.py             # ShiftAssigner (ABC), GreedyShiftAssigner
-│   ├── workload.py             # WorkloadTracker
+│   ├── assigner.py             # ShiftAssigner, CpsatShiftAssigner
+│   ├── solver.py               # SchedulingProblem
 │   └── schedule.py             # Schedule
 └── output/
     ├── __init__.py
+    ├── evaluator.py            # Evaluator
     └── excel_exporter.py       # ExcelExporter
 ```
