@@ -54,3 +54,46 @@ class CpsatShiftAssigner(ShiftAssigner):
             raise ValueError("The scheduling problem is strictly INFEASIBLE.")
         else:
             raise ValueError(f"Solver finished with status: {solver.StatusName(status)}")
+
+class GreedyShiftAssigner(ShiftAssigner):
+    """A simple greedy assigner to quickly check feasibility."""
+
+    def assign(self, context) -> Schedule:
+        # Sort shifts by start time
+        sorted_shifts = sorted(context.shifts, key=lambda s: s.time_slot.start)
+        
+        assigned_shifts = []
+        cadet_shifts = {c.personal_number: [] for c in context.cadets}
+        
+        for shift in sorted_shifts:
+            assigned = False
+            for cadet in context.cadets:
+                # 1. Check basic constraints
+                if not cadet.is_available_during(shift.time_slot):
+                    continue
+                if not cadet.can_take_job(shift.job.name):
+                    continue
+                
+                # 2. Check overlap/consecutive constraints
+                incompatible = False
+                for prev_shift in cadet_shifts[cadet.personal_number]:
+                    if prev_shift.time_slot.overlaps(shift.time_slot):
+                        if not context.constraint_index.can_overlap(prev_shift.job.job_type, shift.job.job_type):
+                            incompatible = True
+                            break
+                    elif prev_shift.time_slot.is_consecutive_with(shift.time_slot):
+                        if not context.constraint_index.can_be_consecutive(prev_shift.job.job_type, shift.job.job_type):
+                            incompatible = True
+                            break
+                            
+                if not incompatible:
+                    shift.assigned_cadet = cadet
+                    assigned_shifts.append(shift)
+                    cadet_shifts[cadet.personal_number].append(shift)
+                    assigned = True
+                    break
+            
+            if not assigned:
+                raise ValueError(f"Greedy check failed: No available cadet for shift {shift.job.name} at {shift.time_slot}.")
+                
+        return Schedule(assignments=assigned_shifts)

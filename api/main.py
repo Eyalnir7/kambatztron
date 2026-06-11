@@ -9,7 +9,7 @@ from domain.job import Job
 from domain.time_slot import TimeSlot
 from domain.constraints import TeamConstraint, ConstraintIndex
 from scheduling.context import build_context
-from scheduling.assigner import CpsatShiftAssigner
+from scheduling.assigner import CpsatShiftAssigner, GreedyShiftAssigner
 
 app = FastAPI(title="Kambatztron API")
 
@@ -277,6 +277,73 @@ def solve_schedule():
         return {"status": "success", "message": "Solver executed successfully", "schedule": result}
     except Exception as e:
         return {"status": "error", "message": str(e), "schedule": []}
+
+@app.post("/api/solve/greedy")
+def solve_schedule_greedy():
+    # 1. Build Jobs
+    job_objects = []
+    for j in STATE["jobs"]:
+        diff_by_slot = {}
+        for s in STATE["shifts"]:
+            if s["job_name"] == j["name"]:
+                try:
+                    ts = TimeSlot.from_string(s["time_slot"])
+                    diff_by_slot[ts] = s["difficulty"]
+                except Exception as e:
+                    print(f"Error parsing timeslot {s['time_slot']}: {e}")
+        if diff_by_slot:
+            job_objects.append(Job(name=j["name"], job_type=j["type"], difficulty_by_slot=diff_by_slot))
+
+    # 2. Build Cadets
+    cadet_objects = []
+    for c in STATE["cadets"]:
+        unavail = []
+        for u in c.get("unavailable_slots", []):
+            try:
+                unavail.append(TimeSlot.parse(u["start"], u["end"]))
+            except Exception as e:
+                print(f"Error parsing cadet unavailable {u}: {e}")
+        cadet_objects.append(Cadet(
+            personal_number=c.get("personal_number", "unknown"),
+            name=c.get("name", "unknown"),
+            team=c.get("team", ""),
+            forbidden_jobs=c.get("forbidden_jobs", []),
+            unavailable_slots=unavail
+        ))
+
+    # 3. Build Team Constraints
+    tc_objects = []
+    for tc in STATE["team_constraints"]:
+        unavail = []
+        for u in tc.get("unavailable_slots", []):
+            try:
+                unavail.append(TimeSlot.parse(u["start"], u["end"]))
+            except:
+                pass
+        tc_objects.append(TeamConstraint(team=tc["team"], unavailable_slots=unavail))
+    
+    # 4. Build Job Constraints
+    from domain.constraints import JobConstraint
+    jc_objects = []
+    for jc in STATE["job_constraints"]:
+        jc_objects.append(JobConstraint(
+            job_type_a=jc["job_type_a"],
+            job_type_b=jc["job_type_b"],
+            can_overlap=jc["can_overlap"],
+            can_be_consecutive=jc["can_be_consecutive"]
+        ))
+
+    constraint_index = ConstraintIndex(constraints=jc_objects, team_constraints=tc_objects)
+
+    # 5. Solve using Greedy Check
+    context = build_context(cadets=cadet_objects, jobs=job_objects, constraint_index=constraint_index)
+    assigner = GreedyShiftAssigner()
+    
+    try:
+        schedule = assigner.assign(context)
+        return {"status": "success", "message": "Feasibility check passed. The problem is feasible with the greedy check."}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 # Mount the static UI
 ui_dir = os.path.join(os.path.dirname(__file__), "..", "ui")

@@ -568,6 +568,37 @@ document.getElementById('run-solver-btn').addEventListener('click', async () => 
     }
 });
 
+// Check Feasibility
+document.getElementById('check-feasibility-btn').addEventListener('click', async () => {
+    const btn = document.getElementById('check-feasibility-btn');
+    btn.textContent = 'Checking...';
+    btn.disabled = true;
+
+    try {
+        const res = await fetch(`${API_BASE}/solve/greedy`, { method: 'POST' });
+        const data = await res.json();
+        
+        if (data.status === 'success') {
+            document.getElementById('schedule-output').innerHTML = `
+                <div style="padding: 16px; margin-bottom: 16px; background: rgba(16, 185, 129, 0.1); border-left: 4px solid var(--secondary-color); color: #34d399;">
+                    <strong>Success!</strong> ${data.message}
+                </div>
+            `;
+        } else {
+            document.getElementById('schedule-output').innerHTML = `
+                <div style="padding: 16px; background: rgba(239, 68, 68, 0.1); border-left: 4px solid #ef4444; color: #ef4444;">
+                    <strong>Error:</strong> ${data.message}
+                </div>
+            `;
+        }
+    } catch (e) {
+        alert('Failed to check feasibility');
+    } finally {
+        btn.textContent = 'Check Feasibility';
+        btn.disabled = false;
+    }
+});
+
 // CSV Parsing Logic
 function parseCSV(text) {
     const rows = text.split('\\n').filter(row => row.trim() !== '');

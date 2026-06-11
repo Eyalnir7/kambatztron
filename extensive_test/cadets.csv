@@ -1,0 +1,31 @@
+personal_number,name,unavailable_hours,forbidden_jobs,gender,team,platoon
+2001,Aaron Smith,,,M,Alpha,1
+2002,Ben Johnson,2026-06-01 08:00-2026-06-01 20:00,,M,Alpha,1
+2003,Caleb Williams,,,M,Alpha,1
+2004,David Brown,,Kitchen Morning,M,Alpha,1
+2005,Eli Jones,,,M,Alpha,1
+2006,Frank Miller,2026-06-02 08:00-2026-06-03 08:00,,M,Alpha,2
+2007,George Davis,,,M,Alpha,2
+2008,Henry Garcia,,HQ Duty,M,Alpha,2
+2009,Isaac Rodriguez,,,M,Alpha,2
+2010,Jack Wilson,,,M,Alpha,2
+2011,Kevin Martinez,2026-06-03 12:00-2026-06-03 20:00,,M,Bravo,1
+2012,Liam Anderson,,,M,Bravo,1
+2013,Mason Taylor,,Patrol,M,Bravo,1
+2014,Noah Thomas,,,M,Bravo,1
+2015,Oliver Moore,2026-06-01 20:00-2026-06-02 08:00,,M,Bravo,1
+2016,Paul Jackson,,,M,Bravo,2
+2017,Quinn Martin,,,F,Bravo,2
+2018,Rachel Lee,,Gate Guard 1,F,Bravo,2
+2019,Sarah Perez,,,F,Bravo,2
+2020,Tom Thompson,2026-06-02 20:00-2026-06-03 08:00,,M,Bravo,2
+2021,Ursula White,,,F,Charlie,1
+2022,Victor Harris,,Kitchen Lunch,M,Charlie,1
+2023,Wendy Clark,,,F,Charlie,1
+2024,Xavier Lewis,,,M,Charlie,1
+2025,Yara Robinson,2026-06-01 08:00-2026-06-02 08:00,,F,Charlie,1
+2026,Zack Walker,,,M,Charlie,2
+2027,Alice Hall,,,F,Charlie,2
+2028,Bob Allen,,HQ Duty;Kitchen Morning,M,Charlie,2
+2029,Chloe Young,2026-06-02 12:00-2026-06-02 16:00,,F,Charlie,2
+2030,Daniel Hernandez,,,M,Charlie,2
