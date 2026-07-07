@@ -1,0 +1,7 @@
+job_type_a,job_type_b,can_overlap,can_be_consecutive
+guarding,guarding,false,false
+guarding,kak,false,true
+guarding,base_work,false,true
+kak,kak,false,false
+kak,base_work,false,true
+base_work,base_work,false,false

@@ -49,6 +49,7 @@ class CadetCSVReader:
                             name=row["name"].strip(),
                             unavailable_hours=row["unavailable_hours"].strip(),
                             forbidden_jobs=row["forbidden_jobs"].strip(),
+                            forbidden_job_names=row.get("forbidden_job_names", "").strip(),
                             gender=row["gender"].strip(),
                             team=row["team"].strip(),
                             platoon=row["platoon"].strip(),

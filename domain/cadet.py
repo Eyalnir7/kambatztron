@@ -14,6 +14,7 @@ class Cadet(BaseModel):
     name: str
     unavailable_slots: List[TimeSlot] = Field(default_factory=list)
     forbidden_jobs: List[str] = Field(default_factory=list)
+    forbidden_job_names: List[str] = Field(default_factory=list)
     gender: str = ""
     team: str = ""
     platoon: str = ""
@@ -28,6 +29,7 @@ class Cadet(BaseModel):
         gender: str,
         team: str,
         platoon: str,
+        forbidden_job_names: str = "",
     ) -> "Cadet":
         """Create a Cadet from CSV row data."""
         # Parse unavailable hours
@@ -46,11 +48,19 @@ class Cadet(BaseModel):
                 if job_name:
                     forbidden_jobs_list.append(job_name)
 
+        forbidden_job_names_list = []
+        if forbidden_job_names and forbidden_job_names.strip():
+            for job_name in forbidden_job_names.split(";"):
+                job_name = job_name.strip()
+                if job_name:
+                    forbidden_job_names_list.append(job_name)
+
         return cls(
             personal_number=personal_number,
             name=name,
             unavailable_slots=unavailable_slots,
             forbidden_jobs=forbidden_jobs_list,
+            forbidden_job_names=forbidden_job_names_list,
             gender=gender,
             team=team,
             platoon=platoon,
@@ -62,4 +72,4 @@ class Cadet(BaseModel):
 
     def can_take_job(self, job_name: str) -> bool:
         """Check if this cadet can take a specific job."""
-        return job_name not in self.forbidden_jobs
+        return job_name not in self.forbidden_jobs and job_name not in self.forbidden_job_names
