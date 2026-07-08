@@ -31,7 +31,7 @@ class ShiftSchedulerApp:
 
         context = build_context(cadets=cadets, jobs=jobs, constraint_index=constraints, T_rest=T_rest, rho=rho)
 
-        assigner = CpsatShiftAssigner(t_rest_hours=8.0, rho=10.0)
+        assigner = CpsatShiftAssigner(t_rest_hours=T_rest, rho=rho)
         schedule = assigner.assign(context)
 
         exporter = ExcelExporter()
