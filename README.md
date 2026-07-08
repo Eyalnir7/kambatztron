@@ -4,185 +4,9 @@
   <img src="assets/logo.png" alt="Kabmatztron logo" width="300"/>
 </p>
 
-Kabmatztron is a Python-based shift scheduling system for assigning cadets to battalion duties.
+Kambatztron is a Python-based cadet duty scheduler. The current codebase reads cadets, jobs, and job-compatibility rules from files, validates the data, solves the assignment with OR-Tools CP-SAT, exports an Excel workbook, and writes evaluation artifacts next to the output.
 
-The project is currently an MVP focused on reading structured input files, validating constraints, assigning cadets to shifts, and exporting the resulting schedule as readable Excel tables.
-
-## What the project does
-
-Kabmatztron assigns cadets to required shifts while enforcing hard constraints and trying to keep the workload fair between individuals.
-
-The system is designed for schedules that include:
-
-- Guarding shifts
-- Cleaning shifts
-- Standby-team duties
-- Ceremony guarding
-- Ceremony missions
-- Other configurable job types
-
-The job types are not hardcoded. They are defined by the input files, so the same system can be reused for different scheduling needs.
-
-## Core goals
-
-The MVP should:
-
-- Read cadet data from a CSV file
-- Read job definitions from a JSON file
-- Read job compatibility rules from a constraints file
-- Validate the input before solving
-- Assign every required shift to one cadet
-- Enforce all hard constraints
-- Balance workload between cadets as fairly as possible
-- Export the result to an Excel file
-- Color cadet names by team/platoon combination in the output
-
-## Scheduling model
-
-A shift is modeled as a combination of:
-
-```text
-Job × Time Slot
-```
-
-For example:
-
-```text
-Job: Gate Guard 1
-Job type: guarding
-Time slot: 2026-06-01 08:00-2026-06-01 12:00
-Difficulty: 4
-Assigned cadet: David Cohen
-```
-
-Each job/time-slot combination should receive exactly one cadet.
-
-If a real-world duty requires two cadets at the same time, it should be modeled as two separate jobs.
-
-## Input files
-
-### 1. Cadets CSV
-
-The cadets CSV contains one row per cadet.
-
-The primary key is the cadet's personal number.
-
-Expected columns:
-
-| Column | Description |
-|---|---|
-| `personal_number` | Unique military/personal ID |
-| `name` | Cadet name |
-| `unavailable_hours` | Time ranges where the cadet cannot participate |
-| `forbidden_jobs` | Jobs the cadet cannot take |
-| `gender` | Cadet gender |
-| `team` | Cadet team |
-| `platoon` | Cadet platoon |
-
-`gender`, `team`, and `platoon` are not used as scheduling constraints in the MVP.
-
-`team` and `platoon` are used for output coloring.
-
-### 2. Jobs JSON
-
-The jobs JSON defines the jobs, their job types, their time slots, and the difficulty of each job/time-slot combination.
-
-Example:
-
-```json
-{
-  "Gate Guard 1": {
-    "job_type": "guarding",
-    "difficulty_by_time_slot": {
-      "2026-06-01 08:00-2026-06-01 12:00": 4,
-      "2026-06-01 12:00-2026-06-01 16:00": 5
-    }
-  },
-  "Cleaning Hallway": {
-    "job_type": "cleaning",
-    "difficulty_by_time_slot": {
-      "2026-06-01 08:00-2026-06-01 12:00": 2,
-      "2026-06-01 12:00-2026-06-01 16:00": 3
-    }
-  }
-}
-```
-
-Difficulty scores are numeric values from `1` to `10`.
-
-```text
-1 = easiest
-10 = hardest
-```
-
-Difficulty should reflect factors such as time of day, unpleasantness, night shifts, holidays, or whether the duty is done alone.
-
-### 3. Job constraints file
-
-The constraints file defines which job types may overlap and which job types may be assigned consecutively.
-
-Possible CSV structure:
-
-| job_type_a | job_type_b | can_overlap | can_be_consecutive |
-|---|---|---:|---:|
-| guarding | cleaning | false | false |
-| standby-team | ceremony-missions | true | true |
-| guarding | guarding | false | false |
-
-## Time slot format
-
-Kabmatztron uses one global time slot format across the project:
-
-```text
-YYYY-MM-DD HH:MM-YYYY-MM-DD HH:MM
-```
-
-Example:
-
-```text
-2026-06-01 08:00-2026-06-01 12:00
-```
-
-This format supports shifts that span multiple days.
-
-## Hard constraints
-
-Kabmatztron must always enforce hard constraints.
-
-A cadet cannot be assigned to a shift if:
-
-- The shift overlaps with the cadet's unavailable hours
-- The job appears in the cadet's forbidden jobs list
-- The cadet already has an overlapping shift, unless the job types are compatible
-- The shift is consecutive with another assigned shift, unless consecutive assignment is allowed
-
-The system should assign every required shift.
-
-If no valid assignment exists, the program should fail clearly and report that no solution was found.
-
-## Fairness
-
-Kabmatztron tries to distribute work fairly between individual cadets.
-
-The initial workload score is based on:
-
-- Shift difficulty
-- Shift duration
-- Total assigned workload per cadet
-
-The exact fairness formula may evolve as the project develops.
-
-The current design keeps the fairness logic isolated so that the MVP greedy assigner can later be replaced by a stronger optimization algorithm such as CP-SAT, local search, or another constraint solver.
-
-## Architecture
-
-The project follows a clean pipeline:
-
-```text
-Parse → Validate → Solve → Export
-```
-
-High-level flow:
+## Current pipeline
 
 ```text
 CLI args
@@ -192,111 +16,107 @@ ShiftSchedulerApp
    ├── CadetCSVReader
    ├── JobJSONReader
    └── ConstraintsCSVReader
-          │
-          ▼
+     │
+     ▼
    InputValidator
-          │
-          ▼
-   ScheduleContext
-          │
-          ▼
-   GreedyShiftAssigner
-          │
-          ▼
+     │
+     ▼
+   build_context()
+     │
+     ▼
+   CpsatShiftAssigner
+     │
+     ▼
    Schedule
-          │
-          ▼
-   ExcelExporter
-          │
-          ▼
-   schedule.xlsx
+     │
+     ├── ExcelExporter -> .xlsx workbook or CSV fallback
+     └── Evaluator -> evaluation/ CSV, JSON, and PNG files
 ```
 
-## Planned file structure
+## Inputs
 
-```text
-shift_scheduler/
-├── shift_scheduler.py          # CLI entry point
-├── app.py                      # ShiftSchedulerApp orchestrator
-├── domain/
-│   ├── __init__.py
-│   ├── time_slot.py            # TimeSlot
-│   ├── cadet.py                # Cadet
-│   ├── job.py                  # Job, Shift
-│   └── constraints.py          # JobConstraint, ConstraintIndex
-├── io/
-│   ├── __init__.py
-│   ├── cadet_reader.py         # CadetCSVReader
-│   ├── job_reader.py           # JobJSONReader
-│   └── constraints_reader.py   # ConstraintsCSVReader
-├── validation/
-│   ├── __init__.py
-│   └── validator.py            # InputValidator, ValidationResult
-├── scheduling/
-│   ├── __init__.py
-│   ├── context.py              # ScheduleContext
-│   ├── assigner.py             # ShiftAssigner, GreedyShiftAssigner
-│   ├── workload.py             # WorkloadTracker
-│   └── schedule.py             # Schedule
-└── output/
-    ├── __init__.py
-    └── excel_exporter.py       # ExcelExporter
-```
+### Cadets CSV
 
-## Usage
+The reader expects these columns:
 
-The MVP is intended to run as a command-line Python script.
+| Column | Description |
+|---|---|
+| `personal_number` | Unique identifier for the cadet |
+| `name` | Cadet name |
+| `unavailable_hours` | Semicolon-separated list of unavailable time slots |
+| `forbidden_jobs` | Semicolon-separated list of forbidden job names |
+| `gender` | Cadet gender |
+| `team` | Cadet team |
+| `platoon` | Cadet platoon |
 
-Example:
+The CSV reader also accepts an optional `forbidden_job_names` column and stores it as an additional forbidden-job list.
+
+### Jobs JSON
+
+The jobs file is a JSON object keyed by job name. Each job entry must contain:
+
+- `job_type`
+- `difficulty_by_time_slot`
+
+Every time slot key must use the format `YYYY-MM-DD HH:MM-YYYY-MM-DD HH:MM`, and each difficulty must be numeric and in the range `1` to `10`.
+
+### Constraints CSV
+
+The constraints file is parsed into a bidirectional `ConstraintIndex` with these columns:
+
+| Column | Description |
+|---|---|
+| `job_type_a` | First job type |
+| `job_type_b` | Second job type |
+| `can_overlap` | Whether the two job types may overlap |
+| `can_be_consecutive` | Whether the two job types may be consecutive |
+
+If no row exists for a job-type pair, the default behavior is that the pair is incompatible.
+
+## Solver behavior
+
+The orchestrator currently uses `CpsatShiftAssigner` from `scheduling/assigner.py`. A greedy assigner still exists in the codebase, but it is not the default path.
+
+The solver works on flattened `Shift` objects built by `build_context()` from the jobs JSON. The context also stores:
+
+- shift ids
+- per-shift difficulty and duration maps
+- the job-type compatibility matrix `Q`
+- the close-shift pair list `E_close`
+- the rest-gap parameter `T_rest`
+- the penalty weight `rho`
+
+## Output
+
+If the output path ends with `.xlsx`, the exporter writes a workbook with one worksheet per job type plus a `Legend` sheet. Table cells contain cadet names colored by team/platoon combination.
+
+If the output path does not end with `.xlsx`, the exporter falls back to a CSV directory layout for compatibility.
+
+After export, the evaluator writes an `evaluation/` folder next to the output base path with:
+
+- `cadet_stats.csv`
+- `summary.json`
+- `difficulty_histogram.png`
+- `hours_histogram.png`
+- `workload_histogram.png`
+- `hours_vs_workload.png`
+
+## CLI
 
 ```bash
 python shift_scheduler.py \
   --cadets cadets.csv \
   --jobs jobs.json \
   --constraints job_constraints.csv \
-  --output schedule.xlsx
+  --output schedule.xlsx \
+  --t-rest 8 \
+  --rho 2
 ```
 
-## Output
+`--t-rest` controls the rest-gap threshold used when building the close-shift pair set. `--rho` is passed through to the context and evaluator, although the current evaluator uses the workload score formula directly.
 
-The preferred output format is an Excel file.
+## Validation reality
 
-The output should include one worksheet per job type.
+The parser layers currently catch missing files, malformed CSV/JSON, invalid time slots, and invalid difficulty values. The `InputValidator` then checks for duplicate cadet personal numbers, missing cadet names, duplicate job names, and a valid constraints object.
 
-Each worksheet should contain a table where:
-
-- Rows are job names
-- Columns are time slots
-- Cell values are assigned cadet names
-- Cadet names are colored by team/platoon combination
-
-Example:
-
-| Job name | 2026-06-01 08:00-12:00 | 2026-06-01 12:00-16:00 |
-|---|---|---|
-| Gate Guard 1 | David Cohen | Yossi Levi |
-| Gate Guard 2 | Amit Mizrahi | Noa Bar |
-
-## Validation
-
-Before solving, Kabmatztron validates the input files.
-
-Validation should catch:
-
-- Missing required columns
-- Duplicate personal numbers
-- Invalid time slot formats
-- Forbidden jobs that do not exist
-- Missing job types
-- Missing difficulty scores
-- Difficulty scores outside the `1–10` range
-- Inconsistent time slots between jobs of the same job type
-- Invalid job constraints
-
-For every job type, all jobs of that type must have the same set of time slots.
-
-## Development status
-
-Kabmatztron is currently in early MVP development.
-
-The current focus is on building a correct, testable pipeline before improving the assignment algorithm.
+Some of the broader checks described in the earlier requirements are still aspirational rather than enforced in code.

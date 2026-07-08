@@ -38,273 +38,276 @@ TimeSlot
   - start: datetime
   - end: datetime
   + overlaps(other: TimeSlot) -> bool
-  + is_consecutive_with(other: TimeSlot) -> bool
-```
-A first-class object so that overlap/consecutive logic lives in one place,
-not scattered across readers and the solver.
+  # Shift Scheduler — Current Design
 
----
+  This file mirrors the architecture that is actually implemented in the repository.
 
-### `Cadet`
-```
-Cadet
-  - personal_number: str        # primary key
-  - name: str
-  - unavailable_slots: list[TimeSlot]
-  - forbidden_jobs: list[str]
-  - gender: str
-  - team: str
-  - platoon: str
-```
+  ## High-Level Architecture
 
----
+  The active pipeline is:
 
-### `Job`
-```
-Job
-  - name: str
-  - job_type: str
-  - difficulty_by_slot: dict[TimeSlot, float]
-```
+  ```text
+  CLI args
+     │
+     ▼
+  ShiftSchedulerApp
+     ├── CadetCSVReader
+     ├── JobJSONReader
+     └── ConstraintsCSVReader
+            │
+            ▼
+     InputValidator
+            │
+            ▼
+     build_context()
+            │
+            ▼
+     CpsatShiftAssigner
+            │
+            ▼
+     Schedule
+            │
+            ├── ExcelExporter
+            └── Evaluator
+  ```
 
----
+  ## 1. Domain Model
 
-### `Shift`  _(the assignable unit — a Job × TimeSlot pair)_
-```
-Shift
-  - job: Job
-  - time_slot: TimeSlot
-  - difficulty: float
-  - assigned_cadet: Cadet | None
-```
+  The current code uses Pydantic models for the core domain objects.
 
----
+  ### `TimeSlot`
 
-### `JobConstraint`
-```
-JobConstraint
-  - job_type_a: str
-  - job_type_b: str
-  - can_overlap: bool
-  - can_be_consecutive: bool
-```
+  Defined in [domain/time_slot.py](domain/time_slot.py).
 
----
+  ```text
+  TimeSlot
+    - start: datetime
+    - end: datetime
+    + overlaps(other: TimeSlot) -> bool
+    + is_consecutive_with(other: TimeSlot) -> bool
+    + from_string(value: str) -> TimeSlot
+  ```
 
-## 2. Input Layer
+  ### `Cadet`
 
-One reader class per file type, each returning domain objects.
+  Defined in [domain/cadet.py](domain/cadet.py).
 
-### `CadetCSVReader`
-```
-CadetCSVReader
-  + read(path: str) -> list[Cadet]
-```
+  ```text
+  Cadet
+    - personal_number: str
+    - name: str
+    - unavailable_slots: list[TimeSlot]
+    - forbidden_jobs: list[str]
+    - forbidden_job_names: list[str]
+    - gender: str
+    - team: str
+    - platoon: str
+  ```
 
-### `JobJSONReader`
-```
-JobJSONReader
-  + read(path: str) -> list[Job]
-```
+  ### `Job`
 
-### `ConstraintsCSVReader`
-```
-ConstraintsCSVReader
-  + read(path: str) -> list[JobConstraint]
-```
+  Defined in [domain/job.py](domain/job.py).
 
----
+  ```text
+  Job
+    - name: str
+    - job_type: str
+    - difficulty_by_slot: dict[TimeSlot, float]
+  ```
 
-## 3. Validation Layer
+  ### `Shift`
 
-Receives all parsed data and runs every check defined in the requirements.
-Separated from parsing so both layers stay focused and independently testable.
+  Defined in [domain/job.py](domain/job.py).
 
-### `InputValidator`
-```
-InputValidator
-  + validate(
-      cadets: list[Cadet],
-      jobs: list[Job],
-      constraints: list[JobConstraint]
-    ) -> ValidationResult
+  ```text
+  Shift
+    - job: Job
+    - time_slot: TimeSlot
+    - difficulty: float
+    - assigned_cadet: Cadet | None
+    + duration_hours() -> float
+    + is_assigned -> bool
+  ```
 
-  # Internal checks:
-  - _validate_cadets()              # unique personal numbers, required fields, time slot format
-  - _validate_jobs()                # job types present, time slot format, difficulty range 1–10
-  - _validate_constraints()         # referenced job types exist, boolean values valid
-  - _validate_cross_references()    # forbidden jobs exist in jobs JSON,
-                                    # time slot consistency per job type
-```
+  ### `JobConstraint`
 
-### `ValidationResult`
-```
-ValidationResult
-  - is_valid: bool
-  - errors: list[str]
-```
+  Defined in [domain/constraints.py](domain/constraints.py).
 
----
+  ```text
+  JobConstraint
+    - job_type_a: str
+    - job_type_b: str
+    - can_overlap: bool
+    - can_be_consecutive: bool
+  ```
 
-## 4. Scheduling Layer
+  ## 2. Input Layer
 
-### `ScheduleContext`
-A single bag of everything the solver needs — built once after validation passes.
-```
-ScheduleContext
-  - cadets: list[Cadet]
-  - shifts: list[Shift]            # flattened from all jobs × time slots
-  - constraint_index: ConstraintIndex
-```
+  The readers live in [readers/](readers).
 
-### `ConstraintIndex`
-Pre-built lookup tables for fast O(1) queries during the assignment loop.
-```
-ConstraintIndex
-  - cadet_by_id: dict[str, Cadet]
-  - constraint_by_type_pair: dict[tuple[str, str], JobConstraint]
-  + can_overlap(type_a: str, type_b: str) -> bool
-  + can_be_consecutive(type_a: str, type_b: str) -> bool
-```
+  ### `CadetCSVReader`
 
-### `ShiftAssigner`  _(abstract base)_
-Defines the solver interface. Swap implementations without touching anything else.
-```
-ShiftAssigner  (ABC)
-  + assign(context: ScheduleContext) -> Schedule
-```
+  ```text
+  CadetCSVReader.read(path: str) -> list[Cadet]
+  ```
 
-### `GreedyShiftAssigner(ShiftAssigner)`  _(MVP implementation)_
-```
-GreedyShiftAssigner
-  - workload_tracker: WorkloadTracker
-  + assign(context: ScheduleContext) -> Schedule
+  Current behavior:
 
-  # Internal helpers:
-  - _get_eligible_cadets(shift, assigned_so_far) -> list[Cadet]
-  - _check_availability(cadet, shift) -> bool
-  - _check_forbidden(cadet, shift) -> bool
-  - _check_no_overlap(cadet, shift, assigned_so_far) -> bool
-  - _check_not_consecutive(cadet, shift, assigned_so_far) -> bool
-```
+  - requires the expected cadet columns
+  - splits `unavailable_hours` and `forbidden_jobs` on `;`
+  - accepts optional `forbidden_job_names`
+  - raises on missing files or malformed rows
 
-### `WorkloadTracker`
-Maintains workload scores and selects the least-loaded eligible cadet.
-```
-WorkloadTracker
-  - scores: dict[Cadet, float]
-  + update(cadet: Cadet, shift: Shift)
-  + get_score(cadet: Cadet) -> float
-  + least_loaded(candidates: list[Cadet]) -> Cadet
+  ### `JobJSONReader`
 
-  # Workload formula (per requirements §7.1):
-  # score = geometric_mean(assigned_difficulties) × total_assigned_hours
-```
+  ```text
+  JobJSONReader.read(path: str) -> list[Job]
+  ```
 
-### `Schedule`
-The output of the solver — a list of fully assigned shifts.
-```
-Schedule
-  - assignments: list[Shift]     # all shifts, assigned_cadet filled in
-  + is_complete() -> bool        # True if every shift has an assigned cadet
-```
+  Current behavior:
 
----
+  - expects a JSON object keyed by job name
+  - requires `job_type` and `difficulty_by_time_slot`
+  - validates that each difficulty is numeric and in the `1..10` range
 
-## 5. Output Layer
+  ### `ConstraintsCSVReader`
 
-### `ExcelExporter`
-```
-ExcelExporter
-  + export(schedule: Schedule, cadets: list[Cadet], path: str)
+  ```text
+  ConstraintsCSVReader.read(path: str) -> ConstraintIndex
+  ```
 
-  # Internal helpers:
-  - _build_color_map(cadets: list[Cadet]) -> dict[tuple[str, str], str]
-    # maps (team, platoon) → hex color string; generated automatically
-  - _write_job_type_sheet(workbook, job_type: str, shifts: list[Shift])
-    # rows = job names, columns = time slots, cells = cadet names (colored)
-```
+  Current behavior:
 
-Output layout (per requirements §9):
-- One worksheet per job type.
-- Rows = job names.
-- Columns = time slots.
-- Cell values = assigned cadet name, colored by team × platoon.
+  - requires the four constraints columns
+  - converts boolean-like strings such as `true`, `1`, and `yes`
+  - builds a bidirectional `ConstraintIndex`
 
----
+  ## 3. Validation Layer
 
-## 6. Orchestrator
+  `InputValidator` in [validation/validator.py](validation/validator.py) is intentionally lightweight in the current codebase.
 
-The script entry point — thin glue that calls each stage in order.
+  It checks:
 
-```
-ShiftSchedulerApp
-  + run(
-      cadets_path: str,
-      jobs_path: str,
-      constraints_path: str,
-      output_path: str
-    )
+  - duplicate cadet personal numbers
+  - missing cadet personal numbers or names
+  - duplicate job names
+  - that at least one job exists
+  - that the constraints argument is a `ConstraintIndex`
 
-  # Execution order:
-  # 1. Read all input files via the three readers.
-  # 2. Run InputValidator; abort with error messages on failure.
-  # 3. Build ScheduleContext (flatten jobs → shifts, build ConstraintIndex).
-  # 4. Run ShiftAssigner.assign(); abort if no solution found.
-  # 5. Run ExcelExporter.export().
-```
+  Most parsing and range validation happens earlier in the readers and domain models.
 
-CLI usage (per requirements §11):
-```bash
-python shift_scheduler.py \
-  --cadets cadets.csv \
-  --jobs jobs.json \
-  --constraints job_constraints.csv \
-  --output schedule.xlsx
-```
+  ## 4. Scheduling Layer
 
----
+  ### `ScheduleContext`
 
-## 7. Key Design Decisions
+  Built in [scheduling/context.py](scheduling/context.py).
 
-| Decision | Rationale |
-|---|---|
-| `TimeSlot` as a first-class object | Overlap and consecutive logic lives in one place, not scattered |
-| Flat `list[Shift]` as solver input | Decouples job structure from assignment logic |
-| `ConstraintIndex` pre-built before solving | O(1) lookups during the hot assignment loop |
-| Abstract `ShiftAssigner` | Trivial to swap greedy MVP for CP-SAT or local search later |
-| Validation as a separate class | Readers stay simple; all cross-file checks are in one auditable place |
-| `WorkloadTracker` as a separate class | Fairness logic is isolated and easy to swap out (§7.2 notes the formula may change) |
+  The context stores:
 
----
+  - `cadets`
+  - `shifts`
+  - `constraint_index`
+  - `shift_ids`
+  - `D`, `L`, `R`
+  - `Q`
+  - `E_close`
+  - `T_rest`
+  - `rho`
 
-## 8. File Structure
+  ### `ConstraintIndex`
 
-```
-shift_scheduler/
-├── shift_scheduler.py          # CLI entry point
-├── app.py                      # ShiftSchedulerApp orchestrator
-├── domain/
-│   ├── __init__.py
-│   ├── time_slot.py            # TimeSlot
-│   ├── cadet.py                # Cadet
-│   ├── job.py                  # Job, Shift
-│   └── constraints.py          # JobConstraint, ConstraintIndex
-├── io/
-│   ├── __init__.py
-│   ├── cadet_reader.py         # CadetCSVReader
-│   ├── job_reader.py           # JobJSONReader
-│   └── constraints_reader.py   # ConstraintsCSVReader
-├── validation/
-│   ├── __init__.py
-│   └── validator.py            # InputValidator, ValidationResult
-├── scheduling/
-│   ├── __init__.py
-│   ├── context.py              # ScheduleContext
-│   ├── assigner.py             # ShiftAssigner (ABC), GreedyShiftAssigner
-│   ├── workload.py             # WorkloadTracker
-│   └── schedule.py             # Schedule
-└── output/
-    ├── __init__.py
-    └── excel_exporter.py       # ExcelExporter
-```
+  Defined in [domain/constraints.py](domain/constraints.py).
+
+  It currently exposes:
+
+  - `can_overlap(job_type_a, job_type_b)`
+  - `can_be_consecutive(job_type_a, job_type_b)`
+  - `get_team_unavailabilities(team)`
+
+  ### `ShiftAssigner`
+
+  `scheduling/assigner.py` defines an abstract base assigner plus two implementations:
+
+  - `CpsatShiftAssigner`, which is what the app uses
+  - `GreedyShiftAssigner`, which remains available as a simpler alternative
+
+  ### `WorkloadTracker`
+
+  `WorkloadTracker` in [scheduling/workload.py](scheduling/workload.py) keeps assigned shifts per cadet and computes the score used by evaluation:
+
+  ```text
+  geometric_mean(assigned_difficulty_scores) * total_assigned_hours
+  ```
+
+  ### `Schedule`
+
+  Defined in [scheduling/schedule.py](scheduling/schedule.py). It is a thin container for the final assigned shifts.
+
+  ## 5. Output Layer
+
+  ### `ExcelExporter`
+
+  Defined in [output/excel_exporter.py](output/excel_exporter.py).
+
+  Current behavior:
+
+  - writes one worksheet per job type for `.xlsx` outputs
+  - adds a `Legend` worksheet for team/platoon colors
+  - uses cadet names only in the table cells
+  - falls back to a CSV directory layout if the path is not `.xlsx`
+
+  ### `Evaluator`
+
+  Defined in [output/evaluator.py](output/evaluator.py).
+
+  It writes:
+
+  - per-cadet CSV statistics
+  - a JSON summary
+  - histograms for difficulty, hours, and workload
+  - a scatter plot for hours vs workload
+
+  ## 6. Orchestrator
+
+  `ShiftSchedulerApp` in [app.py](app.py) currently performs this sequence:
+
+  1. Read cadets, jobs, and constraints.
+  2. Validate the parsed data.
+  3. Build the `ScheduleContext`.
+  4. Run `CpsatShiftAssigner.assign()`.
+  5. Export the workbook or CSV fallback.
+  6. Run the evaluator.
+
+  The CLI entry point is [shift_scheduler.py](shift_scheduler.py), which also exposes `--t-rest` and `--rho`.
+
+  ## 7. File Structure
+
+  ```text
+  shift_scheduler/
+  ├── shift_scheduler.py
+  ├── app.py
+  ├── domain/
+  │   ├── __init__.py
+  │   ├── time_slot.py
+  │   ├── cadet.py
+  │   ├── job.py
+  │   └── constraints.py
+  ├── readers/
+  │   ├── __init__.py
+  │   ├── cadet_reader.py
+  │   ├── job_reader.py
+  │   └── constraints_reader.py
+  ├── validation/
+  │   ├── __init__.py
+  │   └── validator.py
+  ├── scheduling/
+  │   ├── __init__.py
+  │   ├── context.py
+  │   ├── assigner.py
+  │   ├── workload.py
+  │   └── schedule.py
+  └── output/
+      ├── __init__.py
+      ├── excel_exporter.py
+      └── evaluator.py
+  ```

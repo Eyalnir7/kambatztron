@@ -47,11 +47,11 @@ $ X_{c, s} = 0 \quad \forall c \in C, \forall s \in S \text{ if job}(s) \in F_c 
 
 **4. Unified Shift Compatibility Constraint (Hard):**
 This replaces the previous non-overlapping and consecutive constraints. A cadet cannot be assigned to any pair of shifts that are deemed incompatible by the quadratic binary matrix $Q$. This allows for concurrent or consecutive shifts *only* if explicitly permitted by the matrix.
-\[ X_{c, s_1} + X_{c, s_2} \le 1 \quad \forall c \in C, \forall (s_1, s_2) \text{ where } Q_{s_1, s_2} = 0 \]
+$ X_{c, s_1} + X_{c, s_2} \le 1 \quad \forall c \in C, \forall (s_1, s_2) \text{ where } Q_{s_1, s_2} = 0 $
 
 **5. Close-Shift Penalty Trigger (Logical):**
 For every pair of compatible shifts $(s_1, s_2)$ where the gap is $0 < \text{start}(s_2) - \text{end}(s_1) < T_{rest}$:
-\[ Y_{c, s_1, s_2} \ge X_{c, s_1} + X_{c, s_2} - 1 \quad \forall c \in C \]
+$ Y_{c, s_1, s_2} \ge X_{c, s_1} + X_{c, s_2} - 1 \quad \forall c \in C $
 
 ### 2.5 Optimization Objective
 The objective is to minimize the maximum total workload score across all cadets, where the workload includes the base shift difficulty and any accrued penalties for inadequate rest.
@@ -61,7 +61,7 @@ $ W_c = \sum_{s \in S} (X_{c, s} \cdot D_s \cdot L_s) + \rho \sum_{(s_1, s_2) \i
 *(where $E_{close}$ is the set of all shift pairs with a gap less than $T_{rest}$)*
 
 Minimax constraint:
-\[ W_{max} \ge W_c \quad \forall c \in C \]
+$ W_{max} \ge W_c \quad \forall c \in C $
 
 **Objective:**
-\[ \min W_{max} \]
+$ \min W_{max} $

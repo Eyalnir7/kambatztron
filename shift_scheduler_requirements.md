@@ -40,447 +40,143 @@ Each cadet is identified by a unique **personal number**, which is the primary k
 Each cadet has:
 
 - Name
-- Personal number
-- Unavailable hours
-- Jobs they cannot take
-- Gender
-- Team
-- Platoon
+# Shift Scheduler — Current Behavior
 
-The MVP does not use gender, team, or platoon as scheduling constraints.
+This document tracks the behavior implemented in the repository today, not the earlier aspirational MVP wording.
 
-Team and platoon are used only for output visualization.
+## 1. Project Overview
 
----
+The project is a Python scheduling system for assigning cadets to battalion duties. The current implementation reads cadets, jobs, and job-compatibility rules from files, validates the inputs, solves the assignment with OR-Tools CP-SAT, exports a workbook, and writes evaluation outputs next to the result.
 
-### 3.2 Job
+## 2. Core Concepts
 
-A job is a specific duty that needs to be assigned to a cadet at one or more time slots.
+### 2.1 Cadet
 
-Examples of job types from a previous use case:
+A cadet is represented by the `Cadet` model in [domain/cadet.py](domain/cadet.py). The current model stores:
 
-- `guarding`
-- `standby-team`
-- `ceremony-guarding`
-- `ceremony-missions`
-- `cleaning`
+- `personal_number`
+- `name`
+- `unavailable_slots`
+- `forbidden_jobs`
+- `forbidden_job_names`
+- `gender`
+- `team`
+- `platoon`
 
-The job types are not fixed and may change between different uses of the software.
+`team` and `platoon` are used for workbook coloring and evaluation grouping. They are not currently part of solver constraints.
 
-Each job has:
+### 2.2 Job
 
-- Job name
-- Job type
-- A set of time slots
-- A difficulty score for each time slot
+A job is represented by the `Job` model in [domain/job.py](domain/job.py). Each job has:
 
-A job can require more than one cadet in reality, but for the MVP this should be modeled as multiple separate jobs. Therefore, each job/time-slot combination receives at most one cadet assignment.
+- `name`
+- `job_type`
+- `difficulty_by_slot`
 
----
+Each key in `difficulty_by_slot` is a `TimeSlot`.
 
-### 3.3 Shift
+### 2.3 Shift
 
-A shift is a combination of:
+The assignable unit is the `Shift` model in [domain/job.py](domain/job.py). A shift contains:
 
-- Job name
-- Job type
-- Time slot
-- Difficulty score
-- Assigned cadet
+- `job`
+- `time_slot`
+- `difficulty`
+- `assigned_cadet`
 
-For example:
+The solver operates on flattened shifts built from the jobs JSON.
 
-```text
-Job name: Gate Guard 1
-Job type: guarding
-Time slot: 2026-06-01 08:00-12:00
-Difficulty: 4
-Assigned cadet: David Cohen
-```
+### 2.4 Time Slot
 
----
+The shared time-slot format is `YYYY-MM-DD HH:MM-YYYY-MM-DD HH:MM`. Parsing and overlap checks live in [domain/time_slot.py](domain/time_slot.py).
 
-## 4. Time Slot Format
+## 3. Input Files
 
-The project should use a single time slot format across all files.
+### 3.1 Cadets CSV
 
-Recommended format:
+The reader in [readers/cadet_reader.py](readers/cadet_reader.py) currently requires these columns:
 
-```text
-YYYY-MM-DD HH:MM-YYYY-MM-DD HH:MM
-```
+| Column | Description |
+|---|---|
+| `personal_number` | Unique cadet identifier |
+| `name` | Cadet name |
+| `unavailable_hours` | Semicolon-separated unavailable time slots |
+| `forbidden_jobs` | Semicolon-separated forbidden job names |
+| `gender` | Cadet gender |
+| `team` | Cadet team |
+| `platoon` | Cadet platoon |
 
-Example:
+An optional `forbidden_job_names` column is also accepted and stored separately on the model.
 
-```text
-2026-06-01 08:00-2026-06-01 12:00
-```
+### 3.2 Jobs JSON
 
-This format supports shifts that span multiple days.
+The reader in [readers/job_reader.py](readers/job_reader.py) expects a JSON object keyed by job name. Each job entry must contain:
 
-For readability, a shorter display format may be used in the output if the start and end dates are the same, but the internal/input format should remain consistent.
+- `job_type`
+- `difficulty_by_time_slot`
 
-### Validation
+Each time-slot entry must parse through `TimeSlot.from_string()` and each difficulty must be numeric and within `1` to `10`.
 
-The software must validate that every time slot matches the agreed format.
+### 3.3 Constraints CSV
 
----
+The reader in [readers/constraints_reader.py](readers/constraints_reader.py) expects:
 
-## 5. Input Files
+| Column | Description |
+|---|---|
+| `job_type_a` | First job type |
+| `job_type_b` | Second job type |
+| `can_overlap` | Whether the pair may overlap |
+| `can_be_consecutive` | Whether the pair may be consecutive |
 
-### 5.1 Cadets CSV
+The reader builds a bidirectional `ConstraintIndex` in [domain/constraints.py](domain/constraints.py). If a pair is not present, the current default is incompatible.
 
-The cadets CSV contains one row per cadet.
+## 4. Validation Layer
 
-The primary key is `personal_number`.
+`InputValidator` in [validation/validator.py](validation/validator.py) currently checks:
 
-Suggested columns:
+- duplicate cadet personal numbers
+- missing cadet personal numbers or names
+- duplicate job names
+- that jobs were provided
+- that the constraints argument is a `ConstraintIndex`
 
-| Column | Description | Required |
-|---|---|---|
-| `personal_number` | Unique military ID / personal number | Yes |
-| `name` | Cadet name | Yes |
-| `unavailable_hours` | Time slots where the cadet cannot participate | Yes |
-| `forbidden_jobs` | Jobs the cadet cannot take due to medical or other hard constraints | Yes |
-| `gender` | Cadet gender | Yes |
-| `team` | Cadet team | Yes |
-| `platoon` | Cadet platoon | Yes |
+The parser layers already fail on missing files, malformed CSV/JSON, invalid time slots, and invalid difficulty ranges.
 
-### 5.1.1 Unavailable Hours Format
+## 5. Scheduling Layer
 
-Unavailable hours should use the global time slot format:
+`build_context()` in [scheduling/context.py](scheduling/context.py) flattens jobs into shifts and builds the solver inputs:
 
-```text
-YYYY-MM-DD HH:MM-YYYY-MM-DD HH:MM
-```
+- `shift_ids`
+- `D` for shift difficulty
+- `L` for shift duration
+- `R` for required cadets per shift
+- `Q` for overlap/consecutive compatibility
+- `E_close` for shift pairs with a positive rest gap smaller than `T_rest`
 
-If a cadet has multiple unavailable ranges, they can be separated by a delimiter.
+The current orchestrator in [app.py](app.py) uses `CpsatShiftAssigner` from [scheduling/assigner.py](scheduling/assigner.py). A `GreedyShiftAssigner` implementation also exists in the same module, but it is not the default path.
 
-Proposed delimiter:
+`WorkloadTracker` in [scheduling/workload.py](scheduling/workload.py) computes the evaluation-style workload score as geometric mean of assigned difficulties multiplied by total assigned hours.
 
-```text
-;
-```
+## 6. Output
 
-Example:
+`ExcelExporter` in [output/excel_exporter.py](output/excel_exporter.py) writes one worksheet per job type when the output path ends in `.xlsx`. It also writes a `Legend` sheet that maps team/platoon combinations to colors.
 
-```text
-2026-06-01 08:00-2026-06-01 12:00;2026-06-02 00:00-2026-06-02 04:00
-```
+If the output path does not end in `.xlsx`, the exporter falls back to a CSV directory layout.
 
-### 5.1.2 Forbidden Jobs Format
+`Evaluator` in [output/evaluator.py](output/evaluator.py) writes an `evaluation/` folder with per-cadet stats, a JSON summary, and several plots.
 
-Forbidden jobs are hard constraints.
+## 7. CLI
 
-The jobs should be selected from a predefined list, not written as free text in the form.
+The current CLI in [shift_scheduler.py](shift_scheduler.py) accepts:
 
-In the CSV, multiple forbidden jobs can be separated by a delimiter.
-
-Proposed delimiter:
-
-```text
-;
-```
+- `--cadets`
+- `--jobs`
+- `--constraints`
+- `--output`
+- `--t-rest`
+- `--rho`
 
 Example:
-
-```text
-Gate Guard 1;Kitchen Cleaning
-```
-
----
-
-### 5.2 Jobs JSON
-
-The jobs JSON defines the jobs, their job types, their time slots, and their difficulty scores.
-
-The keys are job names.
-
-The values include:
-
-- Job type
-- Dictionary of time slots to difficulty scores
-
-Example structure:
-
-```json
-{
-  "Gate Guard 1": {
-    "job_type": "guarding",
-    "difficulty_by_time_slot": {
-      "2026-06-01 08:00-2026-06-01 12:00": 4,
-      "2026-06-01 12:00-2026-06-01 16:00": 5
-    }
-  },
-  "Cleaning Hallway": {
-    "job_type": "cleaning",
-    "difficulty_by_time_slot": {
-      "2026-06-01 08:00-2026-06-01 12:00": 2,
-      "2026-06-01 12:00-2026-06-01 16:00": 3
-    }
-  }
-}
-```
-
-### 5.2.1 Difficulty Scores
-
-Difficulty scores are numeric.
-
-For now, the scale is:
-
-```text
-1 = easiest
-10 = hardest
-```
-
-The difficulty score reflects all general difficulty factors, including:
-
-- Time of day
-- Whether the job is pleasant or unpleasant
-- Whether the job is done alone or with others
-- Night/weekend/holiday difficulty
-- Any other general difficulty consideration
-
-The difficulty score is not personal to a specific cadet.
-
----
-
-### 5.3 Job Constraints File
-
-Some job types can overlap, and some jobs may be allowed to be consecutive.
-
-These constraints should be specified in a separate file.
-
-The exact format still needs to be finalized.
-
-The file should support at least:
-
-1. Which job types are compatible and may overlap.
-2. Which job types are allowed to be consecutive.
-3. Potentially, job-level compatibility rules if needed later.
-
-Possible CSV structure:
-
-| job_type_a | job_type_b | can_overlap | can_be_consecutive |
-|---|---|---:|---:|
-| guarding | cleaning | false | false |
-| standby-team | ceremony-missions | true | true |
-| guarding | guarding | false | false |
-
----
-
-## 6. Hard Constraints
-
-Hard constraints must always be enforced.
-
-The MVP should enforce the following:
-
-### 6.1 Cadet Availability
-
-A cadet cannot be assigned to a shift that overlaps with one of their unavailable time ranges.
-
-### 6.2 Forbidden Jobs
-
-A cadet cannot be assigned to a job that appears in their forbidden jobs list.
-
-### 6.3 No Overlapping Jobs
-
-A cadet cannot be assigned to two jobs that overlap in time, unless those job types are explicitly marked as compatible in the job constraints file.
-
-### 6.4 Consecutive Jobs
-
-By default, a cadet cannot be assigned to two consecutive jobs.
-
-Exception: consecutive assignment is allowed if the relevant job types are explicitly marked as allowed to be consecutive in the job constraints file.
-
-### 6.5 One Cadet Per Job/Time Slot
-
-Each job/time-slot combination should be assigned to at most one cadet.
-
-If a real-world duty requires two cadets at the same time, it should be modeled as two separate jobs.
-
-### 6.6 Every Shift Must Be Filled
-
-For the MVP, every required job/time-slot combination must be assigned.
-
-If no valid assignment exists, the software should return an error and print that no solution was found.
-
----
-
-## 7. Fairness Objective
-
-The fairness objective should balance the workload between individual cadets.
-
-For the MVP, the solution does not need to be mathematically optimal.
-
-A simple initial fairness score should be used and studied further later.
-
-### 7.1 Proposed Workload Score
-
-For each cadet, calculate a workload score based on:
-
-- The difficulty scores of their assigned shifts
-- The total number of hours assigned
-
-Proposed formula:
-
-```text
-cadet_workload_score = geometric_mean(assigned_shift_difficulty_scores) * total_assigned_hours
-```
-
-Rationale:
-
-- The geometric mean can summarize the difficulty of the assigned shifts.
-- Multiplying by total assigned hours prevents the algorithm from ignoring how much total work a cadet received.
-
-### 7.2 Fairness Goal
-
-The algorithm should try to keep the cadet workload scores as balanced as possible between individuals.
-
-Possible simple MVP objective:
-
-```text
-minimize max(cadet_workload_score) - min(cadet_workload_score)
-```
-
-or:
-
-```text
-minimize variance(cadet_workload_score)
-```
-
-The exact fairness objective should be studied and may change later.
-
----
-
-## 8. Algorithm Requirements
-
-The MVP algorithm should:
-
-1. Load all input files.
-2. Validate all data.
-3. Build all required shifts from the jobs JSON.
-4. Assign cadets to shifts while enforcing hard constraints.
-5. Try to improve fairness between individuals.
-6. Return an assignment if a valid solution is found.
-7. Return an error if no valid solution is found.
-
-The MVP does not need to guarantee the mathematically optimal solution.
-
-A simple heuristic, greedy algorithm, backtracking algorithm, or local-search approach is acceptable.
-
-Hard constraints must never be violated.
-
-The algorithm does not need to be deterministic.
-
----
-
-## 9. Output Requirements
-
-The output should be a table-based schedule.
-
-Preferred output format:
-
-```text
-Excel file (.xlsx)
-```
-
-The output should contain one table per job type.
-
-All tables should be in the same Excel file.
-
-Possible formats:
-
-1. One worksheet per job type.
-2. One worksheet containing multiple separated tables.
-3. One worksheet per day, with tables grouped by job type.
-
-Preferred MVP option:
-
-```text
-One worksheet per job type
-```
-
-### 9.1 Table Format
-
-For each job type:
-
-- Rows are job names.
-- Columns are time slots.
-- Cell values are assigned cadet names.
-
-Example:
-
-| Job name | 2026-06-01 08:00-12:00 | 2026-06-01 12:00-16:00 |
-|---|---|---|
-| Gate Guard 1 | David Cohen | Yossi Levi |
-| Gate Guard 2 | Amit Mizrahi | Noa Bar |
-
-### 9.2 Time Slot Consistency
-
-All jobs of the same job type must have the same time slots.
-
-This must be validated before solving.
-
-### 9.3 Coloring
-
-Cadet names in the output should be colored according to their team/platoon combination.
-
-The exact color mapping can be generated automatically or configured later.
-
-The output should show only cadet names, not personal numbers.
-
----
-
-## 10. Validation Requirements
-
-Before solving, the software should validate the input files.
-
-Validation errors should stop the program.
-
-Required validations:
-
-### 10.1 Cadets CSV
-
-- Every cadet has a personal number.
-- Personal numbers are unique.
-- Required columns exist.
-- Unavailable hours use the global time slot format.
-- Forbidden jobs are valid job names that exist in the jobs JSON.
-
-### 10.2 Jobs JSON
-
-- Every job has a job type.
-- Every job has at least one time slot.
-- Every time slot uses the global time slot format.
-- Every difficulty score is numeric.
-- Every difficulty score is in the range 1–10.
-- Every required job/time-slot combination has a difficulty score.
-
-### 10.3 Job Type Time Slot Consistency
-
-For every job type:
-
-- All jobs of that type must have the same set of time slots.
-
-Example:
-
-If `Gate Guard 1` and `Gate Guard 2` are both of type `guarding`, then they must have exactly the same time slots.
-
-### 10.4 Job Constraints File
-
-- Every job type referenced in the constraints file exists in the jobs JSON.
-- Compatibility values are valid booleans.
-- Consecutive-job values are valid booleans.
-- The file should define behavior clearly enough to decide whether two assignments may overlap or be consecutive.
-
----
-
-## 11. Command-Line Interface
-
-The MVP should be run as a Python script.
-
-Example command:
 
 ```bash
 python shift_scheduler.py \
@@ -490,100 +186,9 @@ python shift_scheduler.py \
   --output schedule.xlsx
 ```
 
-The script should:
+## 8. Implementation Notes
 
-1. Read the input files.
-2. Validate them.
-3. Attempt to solve the assignment.
-4. Write the output file if successful.
-5. Print an error if no valid solution is found.
+- The repository keeps the domain models in `domain/`, readers in `readers/`, scheduling logic in `scheduling/`, validation in `validation/`, and exports in `output/`.
+- The current code path is exact/constraint-solver based, not greedy by default.
+- The codebase currently treats several earlier design ideas as future work rather than enforced behavior.
 
----
-
-## 12. Error Handling
-
-The software should stop and return a clear error message if:
-
-- An input file is missing.
-- A required column is missing.
-- A time slot has an invalid format.
-- Personal numbers are duplicated.
-- A forbidden job does not exist.
-- A job type has inconsistent time slots.
-- A difficulty score is missing.
-- A difficulty score is not numeric or not in the range 1–10.
-- A hard constraint makes the problem impossible to solve.
-- No valid assignment is found.
-
----
-
-## 13. Out of Scope for MVP
-
-The following are intentionally out of scope for the MVP:
-
-- Web app or desktop app.
-- User login or permission levels.
-- Manual editing of assignments inside the software.
-- Locking certain assignments before solving.
-- Preserving parts of a previous assignment.
-- Historical memory of previous schedules.
-- Previous workload from earlier weeks.
-- Soldier rank, seniority, or command position.
-- Personal preferences.
-- Location handling.
-- Summary statistics.
-- Per-cadet workload reports.
-- Security and privacy features beyond local file handling.
-- Displaying personal numbers in the output.
-
----
-
-## 14. Future Improvements
-
-Possible future additions:
-
-1. Web interface or app.
-2. Input forms for cadets.
-3. Job/time-slot editor.
-4. Manual assignment locking.
-5. Support for previous schedules and accumulated fairness over time.
-6. More advanced optimization methods.
-7. Configurable fairness formulas.
-8. Per-cadet summary reports.
-9. Warnings for uneven or suspicious assignments.
-10. Export to multiple formats: Excel, HTML, PDF, CSV.
-11. Permissions for commanders and other users.
-12. Privacy/security handling for sensitive military data.
-13. More detailed compatibility rules between specific jobs, not only job types.
-
----
-
-## 15. Open Design Questions
-
-These questions should be resolved before or during implementation:
-
-1. What exact format should the job constraints file use?
-2. Should job compatibility be defined only by job type, or also by specific job?
-3. What exact fairness objective should be used first?
-4. Should the Excel output use one sheet per job type or one sheet with all tables?
-5. Should colors be assigned automatically by team/platoon, or configured manually?
-6. Should unavailable hours support recurring rules, or only explicit date-time ranges?
-7. Should the solver use a greedy heuristic, backtracking, local search, or a constraint solver library?
-8. How should the system behave if there are multiple valid solutions with similar fairness?
-9. Should the system print partial diagnostic information when no solution is found?
-10. Should the input form generate exactly the same schema as the CSV expected by the script?
-
----
-
-## 16. MVP Success Criteria
-
-The MVP is successful if:
-
-1. The user can provide cadets, jobs, and constraints as input files.
-2. The system validates the files and catches common data errors.
-3. The system creates a valid schedule when one exists.
-4. The system never violates hard constraints.
-5. The resulting schedule is reasonably fair between cadets.
-6. The output is readable as Excel tables.
-7. Cadet names are colored by team/platoon combination.
-8. The script clearly reports failure when no valid assignment exists.
